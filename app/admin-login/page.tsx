@@ -1,0 +1,123 @@
+"use client";
+
+import { useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
+import RNLoader from "@/components/RNLoader";
+import { login, getSession, logout } from "@/lib/auth";
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<RNLoader />}>
+      <AdminLoginContent />
+    </Suspense>
+  );
+}
+
+function AdminLoginContent() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const loginErr = await login(email.trim(), password);
+      if (loginErr) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+
+      // Check admin status
+      const session = await getSession();
+      if (!session?.isAdmin) {
+        await logout();
+        setError("Access denied. This account does not have admin privileges.");
+        setLoading(false);
+        return;
+      }
+
+      router.replace("/admin");
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo / Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span className="text-2xl">⚔️</span>
+            <span className="text-xl font-bold text-white">RevengeNation</span>
+          </div>
+          <p className="text-[#818384] text-sm">Admin Portal</p>
+        </div>
+
+        {/* Card */}
+        <div className="bg-[#111111] border border-[#282828] rounded-xl p-6 shadow-2xl">
+          <h1 className="text-white font-semibold text-lg mb-1">Admin Sign In</h1>
+          <p className="text-[#818384] text-xs mb-6">Restricted access — admins only</p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs text-[#818384] mb-1.5">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@example.com"
+                required
+                autoComplete="email"
+                className="w-full bg-[#1a1a1a] border border-[#282828] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#d7263d] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-[#818384] mb-1.5">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                className="w-full bg-[#1a1a1a] border border-[#282828] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#d7263d] transition-colors"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-3 py-2.5">
+                <p className="text-red-400 text-xs">{error}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-[#d7263d] hover:bg-[#b91c2e] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+            >
+              {loading ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+        </div>
+
+        <p className="text-center text-[#555] text-xs mt-6">
+          Not an admin?{" "}
+          <a href="/" className="text-[#818384] hover:text-white transition-colors">
+            Go home
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}

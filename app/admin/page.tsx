@@ -902,7 +902,7 @@ function AdminPageInner() {
     async function init() {
       const session = await getSession();
       if (!session?.isAdmin) {
-        router.replace("/login?redirect=/admin");
+        router.replace("/admin-login");
         setAuthChecked(true);
         return;
       }
