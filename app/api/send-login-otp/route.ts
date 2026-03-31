@@ -23,15 +23,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email address." }, { status: 400 });
   }
 
-  // Check user exists via profiles table (safe — no full user list exposure)
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id")
-    .eq("email", cleanEmail)
-    .maybeSingle();
+  // Check user exists via Supabase admin API (no full list exposure)
+  const listRes = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(cleanEmail)}&per_page=1`,
+    {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+      },
+    }
+  );
+  const listJson = listRes.ok ? await listRes.json() : null;
+  const userExists = (listJson?.users?.length ?? 0) > 0;
 
   // Always return same response to prevent email enumeration
-  if (!profile) {
+  if (!userExists) {
     return NextResponse.json({ success: true });
   }
 
