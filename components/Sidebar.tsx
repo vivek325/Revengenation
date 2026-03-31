@@ -92,14 +92,6 @@ function SidebarInner({ open, onClose }: SidebarProps) {
           Home
         </Link>
 
-        {/* Profile — shown on mobile (navbar profile is hidden xs) */}
-        {mounted && user && (
-          <Link href="/profile" onClick={onClose} className={navLinkClass(isActive("/profile"))}>
-            <User size={16} className={iconClass(isActive("/profile"))} />
-            Profile
-          </Link>
-        )}
-
         {/* Admin Panel */}
         {mounted && user?.isAdmin && (
           <>
