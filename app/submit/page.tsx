@@ -203,8 +203,8 @@ function SubmitPageInner() {
                     onClick={() => setMode("post")}
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                       mode === "post"
-                        ? "border-[#E11D48] bg-[#E11D48]/10 text-white"
-                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
+                        ? "border-[#E11D48] bg-[#E11D48]/10 text-[#E11D48] shadow-md shadow-[#E11D48]/20 scale-[1.02]"
+                        : "border-slate-300 dark:border-[#2A2A3E] bg-white dark:bg-[#0D0D1A] text-slate-600 dark:text-[#94A3B8] hover:border-[#E11D48]/50 hover:bg-[#E11D48]/5 hover:text-[#E11D48]"
                     }`}
                   >
                     <span className="text-2xl">💬</span>
@@ -218,8 +218,8 @@ function SubmitPageInner() {
                     onClick={() => setMode("story")}
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                       mode === "story"
-                        ? "border-[#7C3AED] bg-[#7C3AED]/10 text-white"
-                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
+                        ? "border-[#7C3AED] bg-[#7C3AED]/10 text-[#7C3AED] shadow-md shadow-[#7C3AED]/20 scale-[1.02]"
+                        : "border-slate-300 dark:border-[#2A2A3E] bg-white dark:bg-[#0D0D1A] text-slate-600 dark:text-[#94A3B8] hover:border-[#7C3AED]/50 hover:bg-[#7C3AED]/5 hover:text-[#7C3AED]"
                     }`}
                   >
                     <span className="text-2xl">🔥</span>
@@ -234,8 +234,8 @@ function SubmitPageInner() {
                     onClick={() => setMode("blog")}
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all col-span-2 ${
                       mode === "blog"
-                        ? "border-[#10B981] bg-[#10B981]/10 text-white"
-                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
+                        ? "border-[#10B981] bg-[#10B981]/10 text-[#10B981] shadow-md shadow-[#10B981]/20 scale-[1.02]"
+                        : "border-slate-300 dark:border-[#2A2A3E] bg-white dark:bg-[#0D0D1A] text-slate-600 dark:text-[#94A3B8] hover:border-[#10B981]/50 hover:bg-[#10B981]/5 hover:text-[#10B981]"
                     }`}
                   >
                     <span className="text-2xl">📰</span>
@@ -552,25 +552,6 @@ function SubmitPageInner() {
 
           {/* Right: Sidebar */}
           <div className="w-64 shrink-0 hidden lg:block space-y-3">
-            {/* Posting rules */}
-            <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-[#E11D48] to-[#7C3AED] px-3 py-2.5">
-                <p className="text-white text-xs font-bold">📌 Posting Rules</p>
-              </div>
-              <div className="p-3 space-y-2">
-                {[
-                  "1. Be anonymous — no real names",
-                  "2. True stories only, no fiction",
-                  "3. Use paragraph breaks for readability",
-                  "4. No hate speech or threats",
-                  "5. Keep it real, keep it raw",
-                ].map((rule) => (
-                  <div key={rule} className="text-[#94A3B8] text-xs border-b border-slate-200 dark:border-[#1E1E2E] pb-2 last:border-0 last:pb-0">
-                    {rule}
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>
