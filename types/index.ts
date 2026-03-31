@@ -7,8 +7,9 @@ export interface Post {
   author: string;
   category: string;
   createdAt: string;
-  type?: "post" | "story";
+  type?: "post" | "story" | "blog";
   imageUrl?: string;
+  coverImage?: string;
 }
 
 export interface Community {
@@ -19,6 +20,7 @@ export interface Community {
   description: string;
   createdBy: string;
   createdAt: string;
+  bannerUrl?: string;
 }
 
 export interface Comment {

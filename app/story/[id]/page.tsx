@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -16,6 +16,7 @@ import {
   deleteComment,
 } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
+import RNLoader from "@/components/RNLoader";
 import type { Post, Comment } from "@/types";
 
 const FLAIR_COLORS: Record<string, string> = {
@@ -45,26 +46,40 @@ export default function StoryPage() {
   const [commentSort, setCommentSort] = useState<CommentSort>("New");
   const [submitting, setSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const id = Number(params.id);
-    const userPosts = getUserAddedPosts();
-    const deletedIds = getDeletedPostIds();
-    const all = [...staticPosts, ...userPosts].filter((p) => !deletedIds.includes(p.id));
-    const found = all.find((p) => p.id === id);
-    if (!found) { router.push("/"); return; }
+    async function init() {
+      const id = Number(params.id);
+      const [userPosts, deletedIds, adj, session, fetchedComments] = await Promise.all([
+        getUserAddedPosts(),
+        getDeletedPostIds(),
+        getVoteAdjustments(),
+        getSession(),
+        getComments(id),
+      ]);
+      const all = [...staticPosts, ...userPosts].filter((p) => !deletedIds.includes(p.id));
+      const found = all.find((p) => p.id === id);
+      if (!found) { router.push("/"); return; }
 
-    const adj = getVoteAdjustments();
-    const up = getUpvotedPosts();
-    const down = getDownvotedPosts();
-    setPost(found);
-    setVotes(found.votes + (adj[found.id] || 0));
-    setVoteState(up.has(found.id) ? "up" : down.has(found.id) ? "down" : null);
-    setComments(getComments(id));
-    const session = getSession();
-    setCurrentUser(session?.username ?? null);
-    setLoading(false);
+      setPost(found);
+      setVotes(found.votes + (adj[found.id] || 0));
+      setCurrentUser(session?.username ?? null);
+      setCurrentUserId(session?.id ?? null);
+      setComments(fetchedComments);
+
+      if (session) {
+        const [up, down] = await Promise.all([
+          getUpvotedPosts(session.id),
+          getDownvotedPosts(session.id),
+        ]);
+        setVoteState(up.has(found.id) ? "up" : down.has(found.id) ? "down" : null);
+      }
+
+      setLoading(false);
+    }
+    init();
   }, [params.id, router]);
 
   const sortedComments = [...comments].sort((a, b) =>
@@ -73,9 +88,9 @@ export default function StoryPage() {
       : 0
   );
 
-  const handleCommentSubmit = (e: React.FormEvent) => {
+  const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentBody.trim() || !post) return;
+    if (!commentBody.trim() || !post || !currentUserId) return;
     setSubmitting(true);
     const c: Comment = {
       id: Date.now().toString(),
@@ -84,14 +99,14 @@ export default function StoryPage() {
       body: commentBody.trim(),
       createdAt: new Date().toISOString(),
     };
-    addComment(c);
+    await addComment(c, currentUserId);
     setComments((prev) => [c, ...prev]);
     setCommentBody("");
     setSubmitting(false);
   };
 
-  const handleDeleteComment = (id: string) => {
-    deleteComment(id);
+  const handleDeleteComment = async (id: string) => {
+    await deleteComment(id);
     setComments((prev) => prev.filter((c) => c.id !== id));
   };
 
@@ -103,9 +118,9 @@ export default function StoryPage() {
     return `${Math.floor(diff / 86400)}d ago`;
   };
 
-  const handleVote = (dir: "up" | "down") => {
+  const handleVote = async (dir: "up" | "down") => {
     if (!post) return;
-    if (!currentUser) {
+    if (!currentUserId) {
       router.push(`/login?redirect=/story/${post.id}`);
       return;
     }
@@ -125,7 +140,7 @@ export default function StoryPage() {
       else { delta = -1; nowDown = true; }
     }
 
-    castVote(post.id, delta, nowUp, nowDown);
+    castVote(post.id, delta, nowUp, nowDown, currentUserId);
     setVoteState(nowUp ? "up" : nowDown ? "down" : null);
     setVotes((v) => v + delta);
   };
@@ -138,7 +153,7 @@ export default function StoryPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -151,30 +166,44 @@ export default function StoryPage() {
     voteState === "up" ? "#E11D48" : voteState === "down" ? "#7C3AED" : "#64748B";
 
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <div className="min-h-screen">
 
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-[#64748B] mb-4">
-          <Link href="/" className="hover:text-[#E2E8F0] hover:underline">RevengeNation</Link>
+          <Link href="/" className="hover:text-slate-800 dark:text-[#E2E8F0] hover:underline">RevengeNation</Link>
           <span>›</span>
           <span style={{ color: flairColor }}>{post.category}</span>
         </div>
 
         {/* Post card */}
-        <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl overflow-hidden">
+        <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl overflow-hidden">
           <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${flairColor}, ${flairColor}88)` }} />
           <div className="p-5">
             {/* Meta */}
             <div className="flex items-center gap-1.5 text-xs text-[#64748B] mb-3 flex-wrap">
               <span className="font-bold" style={{ color: flairColor }}>{post.category}</span>
               <span>•</span>
-              <span>u/{post.author}</span>
+              {post.author === "RevengeNation" ? (
+                <span className="text-[#E11D48] font-bold">RevengeNation</span>
+              ) : (
+                <span>u/{post.author}</span>
+              )}
               <span>•</span>
               <span>{new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
 
-            <h1 className="text-[#E2E8F0] text-xl font-bold leading-snug mb-4">{post.title}</h1>
+            <h1 className="text-slate-800 dark:text-[#E2E8F0] text-xl font-bold leading-snug mb-4">{post.title}</h1>
+
+            {/* Cover image (blog only) */}
+            {post.type === "blog" && post.coverImage && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.coverImage}
+                alt="cover"
+                className="w-full max-h-80 object-cover rounded-xl mb-5 border border-slate-200 dark:border-[#1E1E2E]"
+              />
+            )}
 
             {/* Image (for posts with uploaded image) */}
             {post.imageUrl && (
@@ -182,21 +211,42 @@ export default function StoryPage() {
               <img
                 src={post.imageUrl}
                 alt="post image"
-                className="w-full max-h-96 object-cover rounded-xl mb-4 border border-[#1E1E2E]"
+                className="w-full max-h-96 object-cover rounded-xl mb-4 border border-slate-200 dark:border-[#1E1E2E]"
               />
             )}
 
             {/* Body */}
+            {post.type === "blog" ? (
+              <div className="prose prose-invert max-w-none text-slate-600 dark:text-[#CBD5E1] text-base leading-8 space-y-5">
+                {post.author === "RevengeNation" && (
+                  <div className="flex items-center gap-2 mb-4 pb-4 border-b border-slate-200 dark:border-[#1E1E2E]">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center shrink-0">
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="white">
+                        <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[#E11D48] font-bold text-sm">RevengeNation</p>
+                      <p className="text-[#64748B] text-xs">Official Blog</p>
+                    </div>
+                  </div>
+                )}
+                {post.fullStory.split("\n\n").map((para, i) => (
+                  <p key={i} className="text-slate-600 dark:text-[#CBD5E1] leading-8">{para}</p>
+                ))}
+              </div>
+            ) : (
             <div className="text-[#94A3B8] text-sm leading-7 space-y-4">
               {post.fullStory.split("\n\n").map((para, i) => (
                 <p key={i}>{para}</p>
               ))}
             </div>
+            )}
 
             {/* Action bar */}
-            <div className="flex items-center gap-2 mt-6 pt-4 border-t border-[#1E1E2E] flex-wrap">
+            <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-200 dark:border-[#1E1E2E] flex-wrap">
               {/* Votes */}
-              <div className="flex items-center gap-1 bg-[#08080E] border border-[#1E1E2E] rounded-lg px-1 py-1">
+              <div className="flex items-center gap-1 bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] rounded-lg px-1 py-1">
                 <button
                   onClick={() => handleVote("up")}
                   className={`p-1.5 rounded-md transition-colors ${
@@ -224,7 +274,7 @@ export default function StoryPage() {
 
               <button
                 onClick={() => textareaRef.current?.focus()}
-                className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-[#1A1A28] hover:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-slate-100 dark:bg-[#1A1A28] hover:text-slate-800 dark:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -234,7 +284,7 @@ export default function StoryPage() {
 
               <button
                 onClick={handleShare}
-                className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-[#1A1A28] hover:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-slate-100 dark:bg-[#1A1A28] hover:text-slate-800 dark:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -244,7 +294,7 @@ export default function StoryPage() {
 
               <Link
                 href="/"
-                className="ml-auto flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-[#1A1A28] hover:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
+                className="ml-auto flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-slate-100 dark:bg-[#1A1A28] hover:text-slate-800 dark:text-[#E2E8F0] rounded-lg text-xs font-bold transition-colors"
               >
                 ← Back
               </Link>
@@ -255,12 +305,12 @@ export default function StoryPage() {
         {/* Comments section */}
         <div id="comments" className="mt-4 space-y-4">
           {/* Comment input */}
-          <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-4">
+          <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-4">
             {currentUser ? (
               <>
                 <p className="text-[#64748B] text-xs font-semibold mb-3">
                   💬 Comment as{" "}
-                  <span className="text-[#E2E8F0]">{currentUser}</span>
+                  <span className="text-slate-800 dark:text-[#E2E8F0]">{currentUser}</span>
                 </p>
                 <form onSubmit={handleCommentSubmit} className="space-y-3">
                   <textarea
@@ -269,7 +319,7 @@ export default function StoryPage() {
                     value={commentBody}
                     onChange={(e) => setCommentBody(e.target.value)}
                     placeholder="What do you think? Add a comment…"
-                    className="w-full bg-[#08080E] border border-[#1E1E2E] hover:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
+                    className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
                   />
                   <div className="flex justify-end">
                     <button
@@ -294,7 +344,7 @@ export default function StoryPage() {
                   </a>
                   <a
                     href={`/login?mode=signup&redirect=/story/${post?.id}`}
-                    className="px-4 py-2 border border-[#2A2A3E] hover:bg-[#1A1A28] text-[#94A3B8] hover:text-white text-xs font-bold rounded-lg transition-colors"
+                    className="px-4 py-2 border border-slate-300 dark:border-[#2A2A3E] hover:bg-slate-100 dark:bg-[#1A1A28] text-[#94A3B8] dark:hover:text-white hover:text-slate-800 text-xs font-bold rounded-lg transition-colors"
                   >
                     Sign Up
                   </a>
@@ -314,7 +364,7 @@ export default function StoryPage() {
                     key={s}
                     onClick={() => setCommentSort(s)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                      commentSort === s ? "text-white bg-[#1A1A28] border border-[#2A2A3E]" : "text-[#64748B] hover:text-white hover:bg-[#1A1A28]"
+                      commentSort === s ? "text-white bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E]" : "text-[#64748B] dark:hover:text-white hover:text-slate-800 hover:bg-slate-100 dark:bg-[#1A1A28]"
                     }`}
                   >
                     {s}
@@ -326,20 +376,20 @@ export default function StoryPage() {
 
           {/* Comment list */}
           {sortedComments.length === 0 ? (
-            <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-10 text-center">
+            <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-10 text-center">
               <div className="text-4xl mb-3">💬</div>
-              <p className="text-[#E2E8F0] font-semibold text-sm">No comments yet</p>
+              <p className="text-slate-800 dark:text-[#E2E8F0] font-semibold text-sm">No comments yet</p>
               <p className="text-[#64748B] text-xs mt-1">Be the first to share your thoughts</p>
             </div>
           ) : (
             <div className="space-y-3">
               {sortedComments.map((c) => (
-                <div key={c.id} className="bg-[#0F0F18] border border-[#1E1E2E] hover:border-[#2A2A3E] rounded-xl p-4 transition-colors">
+                <div key={c.id} className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-xl p-4 transition-colors">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center text-white text-[10px] font-black uppercase shrink-0">
                       {c.author[0]}
                     </div>
-                    <span className="text-[#E2E8F0] text-xs font-bold">{c.author}</span>
+                    <span className="text-slate-800 dark:text-[#E2E8F0] text-xs font-bold">{c.author}</span>
                     <span className="text-[#64748B] text-xs">{timeAgo(c.createdAt)}</span>
                     {(currentUser === c.author || currentUser === "admin") && (
                       <button

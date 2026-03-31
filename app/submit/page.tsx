@@ -1,16 +1,17 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import RNLoader from "@/components/RNLoader";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getUserAddedPosts, saveUserAddedPosts, getUserCommunities } from "@/lib/storage";
+import { saveUserAddedPost, getUserCommunities } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
 import type { Post } from "@/types";
 
 const BASE_CATEGORIES = [
   "Red Flag Guide",
   "Psychology & Mindset",
-  "Stories",
+  "Cheating Stories",
   "How-To Guides",
   "Relationship Advice",
   "Listicle/Roundup",
@@ -19,16 +20,17 @@ const BASE_CATEGORIES = [
 const FLAIR_COLORS: Record<string, string> = {
   "Red Flag Guide": "#EF4444",
   "Psychology & Mindset": "#8B5CF6",
-  "Stories": "#F59E0B",
+  "Cheating Stories": "#F59E0B",
   "How-To Guides": "#3B82F6",
   "Relationship Advice": "#EC4899",
   "Listicle/Roundup": "#10B981",
 };
 
-type ModeType = "post" | "story";
+type ModeType = "post" | "story" | "blog";
 
 export default function SubmitPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [authChecked, setAuthChecked] = useState(false);
   const [mode, setMode] = useState<ModeType>("post");
   const [categories, setCategories] = useState<string[]>(BASE_CATEGORIES);
@@ -42,31 +44,56 @@ export default function SubmitPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [coverImage, setCoverImage] = useState<string | null>(null);
   const [postAnon, setPostAnon] = useState(false);
+  const [postAsRN, setPostAsRN] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [ownedCommunityNames, setOwnedCommunityNames] = useState<Set<string>>(new Set());
+  const [postAsCommunity, setPostAsCommunity] = useState(false);
+  const [allCommunityNames, setAllCommunityNames] = useState<Set<string>>(new Set());
+  const [communityMeta, setCommunityMeta] = useState<Record<string, { emoji: string; color: string }>>({});
 
   useEffect(() => {
-    const session = getSession();
-    if (!session) {
-      router.replace("/login?redirect=/submit");
-    } else {
-      setAuthChecked(true);
-      const session = getSession();
-      setCurrentUser(session?.username ?? "");
-      // Merge built-in + user communities
-      const userComms = getUserCommunities();
-      const userNames = userComms.map((c) => c.name);
-      setCategories([...BASE_CATEGORIES, ...userNames.filter((n) => !BASE_CATEGORIES.includes(n))]);
+    async function check() {
+      const session = await getSession();
+      if (!session) {
+        router.replace("/login?redirect=/submit");
+      } else {
+        setCurrentUser(session.username);
+        setCurrentUserId(session.id);
+        setIsAdmin(session.isAdmin ?? false);
+        setAuthChecked(true);
+        const userComms = await getUserCommunities();
+        const userNames = userComms.map((c) => c.name);
+        // Only base categories in the dropdown — communities are selected via URL only
+        setCategories(BASE_CATEGORIES);
+        const allNames = new Set(userNames);
+        setAllCommunityNames(allNames);
+        const meta: Record<string, { emoji: string; color: string }> = {};
+        userComms.forEach((c) => { meta[c.name] = { emoji: c.emoji, color: c.color }; });
+        setCommunityMeta(meta);
+        const owned = new Set(userComms.filter((c) => c.createdBy === session.username).map((c) => c.name));
+        setOwnedCommunityNames(owned);
+        // Pre-select category from URL param (base or community)
+        const urlCat = searchParams?.get("category");
+        if (urlCat && (BASE_CATEGORIES.includes(urlCat) || allNames.has(urlCat))) setCategory(urlCat);
+      }
     }
+    check();
   }, [router]);
 
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-[#E11D48] border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  // Auto-set postAsCommunity when category changes
+  useEffect(() => {
+    // If owner switches to their community → default to posting as community
+    setPostAsCommunity(ownedCommunityNames.has(category));
+    if (!BASE_CATEGORIES.includes(category)) setPostAnon(false);
+  }, [category, ownedCommunityNames]);
+
+  const isInCommunity = allCommunityNames.has(category);
+
+  if (!authChecked) return <RNLoader />;
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -80,7 +107,16 @@ export default function SubmitPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleCoverImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("Max file size is 5 MB"); return; }
+    const reader = new FileReader();
+    reader.onload = () => setCoverImage(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const newPost: Post = {
@@ -88,25 +124,26 @@ export default function SubmitPage() {
       title: form.title.trim(),
       content: form.content.trim(),
       fullStory: form.fullStory.trim() || form.content.trim(),
-      author: postAnon ? "Anonymous" : (currentUser || "Anonymous"),
+      author: postAnon ? "Anonymous" : (postAsRN ? "RevengeNation" : (postAsCommunity && ownedCommunityNames.has(category) ? category : (currentUser || "Anonymous"))),
       category,
       votes: 1,
       createdAt: new Date().toISOString(),
       type: mode,
       imageUrl: mode === "post" && imagePreview ? imagePreview : undefined,
+      coverImage: mode === "blog" && coverImage ? coverImage : undefined,
     };
-    const existing = getUserAddedPosts();
-    saveUserAddedPosts([...existing, newPost]);
-    setTimeout(() => { setLoading(false); setSubmitted(true); }, 600);
+    await saveUserAddedPost(newPost, currentUserId);
+    setLoading(false);
+    setSubmitted(true);
   };
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-[#08080E]">
+      <div className="min-h-screen">
         <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-10">
+          <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-10">
             <div className="text-6xl mb-5">🔥</div>
-            <h1 className="text-2xl font-bold text-[#E2E8F0] mb-2">Story Submitted!</h1>
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-[#E2E8F0] mb-2">Story Submitted!</h1>
             <p className="text-[#64748B] text-sm mb-8">
               Your revenge story is now live. Let the community judge.
             </p>
@@ -117,7 +154,7 @@ export default function SubmitPage() {
                   setForm({ title: "", content: "", fullStory: "", author: "" });
                   setPostAnon(false);
                 }}
-                className="px-5 py-2 border border-[#1E1E2E] text-[#94A3B8] hover:bg-[#1A1A28] rounded-lg text-sm font-bold transition-colors"
+                className="px-5 py-2 border border-slate-200 dark:border-[#1E1E2E] text-[#94A3B8] hover:bg-slate-100 dark:bg-[#1A1A28] rounded-lg text-sm font-bold transition-colors"
               >
                 Submit Another
               </button>
@@ -135,22 +172,22 @@ export default function SubmitPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <div className="min-h-screen">
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-[#64748B] mb-5">
-          <Link href="/" className="hover:underline hover:text-[#E2E8F0]">RevengeNation</Link>
+          <Link href="/" className="hover:underline hover:text-slate-800 dark:text-[#E2E8F0]">RevengeNation</Link>
           <span>›</span>
-          <span className="text-[#E2E8F0]">Submit a Story</span>
+          <span className="text-slate-800 dark:text-[#E2E8F0]">Submit a Story</span>
         </div>
 
         <div className="flex gap-6">
           {/* Left: Form */}
           <div className="flex-1 min-w-0">
-            <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl overflow-hidden">
+            <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl overflow-hidden">
               {/* Mode selector */}
-              <div className="p-4 border-b border-[#1E1E2E]">
+              <div className="p-4 border-b border-slate-200 dark:border-[#1E1E2E]">
                 <p className="text-[#64748B] text-xs font-semibold mb-3 uppercase tracking-widest">What are you posting?</p>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -159,7 +196,7 @@ export default function SubmitPage() {
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                       mode === "post"
                         ? "border-[#E11D48] bg-[#E11D48]/10 text-white"
-                        : "border-[#1E1E2E] bg-[#08080E] text-[#64748B] hover:border-[#2A2A3E] hover:text-[#94A3B8]"
+                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
                     }`}
                   >
                     <span className="text-2xl">💬</span>
@@ -174,7 +211,7 @@ export default function SubmitPage() {
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                       mode === "story"
                         ? "border-[#7C3AED] bg-[#7C3AED]/10 text-white"
-                        : "border-[#1E1E2E] bg-[#08080E] text-[#64748B] hover:border-[#2A2A3E] hover:text-[#94A3B8]"
+                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
                     }`}
                   >
                     <span className="text-2xl">🔥</span>
@@ -183,46 +220,75 @@ export default function SubmitPage() {
                       <p className="text-[10px] mt-0.5 opacity-70">Full revenge narrative</p>
                     </div>
                   </button>
+                  {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setMode("blog")}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all col-span-2 ${
+                      mode === "blog"
+                        ? "border-[#10B981] bg-[#10B981]/10 text-white"
+                        : "border-slate-200 dark:border-[#1E1E2E] bg-slate-50 dark:bg-[#08080E] text-[#64748B] hover:border-slate-300 dark:border-[#2A2A3E] hover:text-[#94A3B8]"
+                    }`}
+                  >
+                    <span className="text-2xl">📰</span>
+                    <div className="text-center">
+                      <p className="text-sm font-bold">Blog Post</p>
+                      <p className="text-[10px] mt-0.5 opacity-70">Official article — Admin only</p>
+                    </div>
+                  </button>
+                  )}
                 </div>
               </div>
 
               <form onSubmit={handleSubmit} className="p-4 space-y-4">
-                {/* Community selector */}
-                <div className="flex items-center gap-2 p-2 border border-[#1E1E2E] hover:border-[#2A2A3E] rounded-lg transition-colors bg-[#08080E]">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center shrink-0">
-                    <span className="text-white text-xs font-black">R</span>
+                {/* Category / Community selector */}
+                {isInCommunity ? (
+                  // Locked community badge — not changeable
+                  <div className="flex items-center gap-2 p-2 border border-slate-200 dark:border-[#1E1E2E] rounded-lg bg-slate-50 dark:bg-[#08080E]">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0"
+                      style={{ backgroundColor: (communityMeta[category]?.color ?? "#E11D48") + "33" }}
+                    >
+                      {communityMeta[category]?.emoji ?? "🏘️"}
+                    </div>
+                    <span className="flex-1 text-slate-800 dark:text-[#E2E8F0] text-sm font-bold">{category}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#1A1A28] text-[#64748B] font-medium">Community</span>
                   </div>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="flex-1 bg-transparent text-[#E2E8F0] text-sm font-bold outline-none cursor-pointer"
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c} className="bg-[#0F0F18]">{c}</option>
-                    ))}
-                  </select>
-                  <div
-                    className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{
-                      backgroundColor: (FLAIR_COLORS[category] ?? "#E11D48") + "22",
-                      color: FLAIR_COLORS[category] ?? "#E11D48",
-                    }}
-                  >
-                    {category}
+                ) : (
+                  <div className="flex items-center gap-2 p-2 border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-lg transition-colors bg-slate-50 dark:bg-[#08080E]">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center shrink-0">
+                      <span className="text-white text-xs font-black">R</span>
+                    </div>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="flex-1 bg-transparent text-slate-800 dark:text-[#E2E8F0] text-sm font-bold outline-none cursor-pointer"
+                    >
+                      {categories.map((c) => (
+                        <option key={c} value={c} className="bg-white dark:bg-[#0F0F18]">{c}</option>
+                      ))}
+                    </select>
+                    <div
+                      className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{
+                        backgroundColor: (FLAIR_COLORS[category] ?? "#E11D48") + "22",
+                        color: FLAIR_COLORS[category] ?? "#E11D48",
+                      }}
+                    >
+                      {category}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Title */}
                 <div>
                   <input
                     required
-                    maxLength={300}
                     value={form.title}
                     onChange={(e) => update("title", e.target.value)}
                     placeholder="Title *"
-                    className="w-full bg-[#08080E] border border-[#1E1E2E] hover:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors"
+                    className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors"
                   />
-                  <div className="text-right text-[#64748B] text-xs mt-1">{form.title.length}/300</div>
                 </div>
 
                 {/* Post mode — body text + optional image */}
@@ -233,12 +299,12 @@ export default function SubmitPage() {
                       value={form.content}
                       onChange={(e) => update("content", e.target.value)}
                       placeholder="What's on your mind? Share a thought, question, or short post…"
-                      className="w-full bg-[#08080E] border border-[#1E1E2E] hover:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
+                      className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
                     />
 
                     {/* Image upload */}
                     {imagePreview ? (
-                      <div className="relative rounded-xl overflow-hidden border border-[#1E1E2E]">
+                      <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-[#1E1E2E]">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={imagePreview} alt="preview" className="w-full max-h-72 object-cover" />
                         <button
@@ -250,14 +316,14 @@ export default function SubmitPage() {
                         </button>
                       </div>
                     ) : (
-                      <label className="flex items-center gap-3 px-4 py-3 bg-[#08080E] border border-dashed border-[#1E1E2E] hover:border-[#E11D48]/50 rounded-xl cursor-pointer transition-colors group">
-                        <div className="w-8 h-8 rounded-lg bg-[#1A1A28] flex items-center justify-center shrink-0 group-hover:bg-[#E11D48]/10 transition-colors">
+                      <label className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-[#08080E] border border-dashed border-slate-200 dark:border-[#1E1E2E] hover:border-[#E11D48]/50 rounded-xl cursor-pointer transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#1A1A28] flex items-center justify-center shrink-0 group-hover:bg-[#E11D48]/10 transition-colors">
                           <svg className="w-4 h-4 text-[#64748B] group-hover:text-[#E11D48]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                         </div>
                         <div>
-                          <p className="text-[#94A3B8] text-xs font-semibold group-hover:text-white transition-colors">Add an image</p>
+                          <p className="text-[#94A3B8] text-xs font-semibold group-dark:hover:text-white hover:text-slate-800 transition-colors">Add an image</p>
                           <p className="text-[#64748B] text-[10px] mt-0.5">PNG, JPG, GIF · max 5 MB</p>
                         </div>
                         <input
@@ -271,6 +337,45 @@ export default function SubmitPage() {
                   </div>
                 )}
 
+                {/* Blog mode — admin only, cover image + article body */}
+                {mode === "blog" && (
+                  <div className="space-y-3">
+                    {/* Cover image */}
+                    {coverImage ? (
+                      <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-[#1E1E2E]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={coverImage} alt="cover" className="w-full max-h-56 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setCoverImage(null)}
+                          className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/70 text-white text-xs hover:bg-black transition-colors"
+                        >✕</button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-[#08080E] border border-dashed border-slate-200 dark:border-[#1E1E2E] hover:border-[#10B981]/50 rounded-xl cursor-pointer transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#1A1A28] flex items-center justify-center shrink-0 group-hover:bg-[#10B981]/10 transition-colors">
+                          <svg className="w-4 h-4 text-[#64748B] group-hover:text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-[#94A3B8] text-xs font-semibold group-dark:hover:text-white hover:text-slate-800 transition-colors">Add cover image</p>
+                          <p className="text-[#64748B] text-[10px] mt-0.5">PNG, JPG · max 5 MB</p>
+                        </div>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleCoverImage} />
+                      </label>
+                    )}
+                    <textarea
+                      required
+                      rows={14}
+                      value={form.fullStory}
+                      onChange={(e) => update("fullStory", e.target.value)}
+                      placeholder="Write the full blog article here. Use double line breaks for new paragraphs…"
+                      className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#10B981] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none leading-relaxed"
+                    />
+                  </div>
+                )}
+
                 {/* Story mode — preview + full narrative */}
                 {mode === "story" && (
                   <>
@@ -280,7 +385,7 @@ export default function SubmitPage() {
                         value={form.content}
                         onChange={(e) => update("content", e.target.value)}
                         placeholder="Hook (2–3 sentences shown on the feed card) — optional…"
-                        className="w-full bg-[#08080E] border border-[#1E1E2E] hover:border-[#2A2A3E] focus:border-[#7C3AED] rounded-lg px-3 py-2.5 text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#7C3AED] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
                       />
                       <p className="text-[#64748B] text-[10px] mt-1">This appears as the card preview on the feed</p>
                     </div>
@@ -291,21 +396,96 @@ export default function SubmitPage() {
                         value={form.fullStory}
                         onChange={(e) => update("fullStory", e.target.value)}
                         placeholder="Tell the full story — be raw, be real. Use double line breaks for paragraphs…"
-                        className="w-full bg-[#08080E] border border-[#1E1E2E] hover:border-[#2A2A3E] focus:border-[#7C3AED] rounded-lg px-3 py-2.5 text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none leading-relaxed"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#7C3AED] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none leading-relaxed"
                       />
                       <p className="text-[#64748B] text-[10px] mt-1">Readers see this on the full story page</p>
                     </div>
                   </>
                 )}
 
-                {/* Post anonymously toggle */}
-                <div className="flex items-center justify-between p-3 bg-[#08080E] border border-[#1E1E2E] rounded-lg">
+                {/* Post as community toggle — only shown for community owners */}
+                {!postAnon && ownedCommunityNames.has(category) && (
+                  <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] rounded-lg">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-[#E11D48]/20 flex items-center justify-center text-sm shrink-0">🏘️</div>
+                      <div>
+                        <p className="text-slate-800 dark:text-[#E2E8F0] text-xs font-semibold">
+                          Post as{" "}
+                          <span className={postAsCommunity ? "text-[#E11D48]" : "text-[#94A3B8]"}>
+                            {postAsCommunity ? category : currentUser}
+                          </span>
+                        </p>
+                        <p className="text-[#64748B] text-[10px] mt-0.5">
+                          {postAsCommunity ? "Posting under community name" : "Posting under your profile"}
+                        </p>
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <span className="text-[#64748B] text-xs font-semibold">
+                        {postAsCommunity ? "Community" : "Profile"}
+                      </span>
+                      <div
+                        onClick={() => setPostAsCommunity((v) => !v)}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${
+                          postAsCommunity ? "bg-[#E11D48]" : "bg-[#1E1E2E]"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                            postAsCommunity ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </div>
+                    </label>
+                  </div>
+                )}
+
+                {/* Post as RevengeNation toggle — admin only */}
+                {isAdmin && !postAnon && (
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-[#08080E] border border-[#E11D48]/30 rounded-lg">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center shrink-0">
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="white">
+                        <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-slate-800 dark:text-[#E2E8F0] text-xs font-semibold">
+                        Post as{" "}
+                        <span className={postAsRN ? "text-[#E11D48]" : "text-[#94A3B8]"}>
+                          {postAsRN ? "RevengeNation" : currentUser}
+                        </span>
+                      </p>
+                      <p className="text-[#64748B] text-[10px] mt-0.5">Admin: post under platform name</p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <span className="text-[#64748B] text-xs font-semibold">RevengeNation</span>
+                    <div
+                      onClick={() => setPostAsRN((v) => !v)}
+                      className={`relative w-9 h-5 rounded-full transition-colors ${
+                        postAsRN ? "bg-[#E11D48]" : "bg-[#1E1E2E]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                          postAsRN ? "translate-x-4" : "translate-x-0.5"
+                        }`}
+                      />
+                    </div>
+                  </label>
+                </div>
+                )}
+
+                {/* Post anonymously toggle — hidden in communities */}
+                {!isInCommunity && (
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] rounded-lg">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#E11D48] to-[#7C3AED] flex items-center justify-center text-white text-xs font-black uppercase shrink-0">
                       {postAnon ? "?" : currentUser[0] ?? "?"}
                     </div>
                     <div>
-                      <p className="text-[#E2E8F0] text-xs font-semibold">
+                      <p className="text-slate-800 dark:text-[#E2E8F0] text-xs font-semibold">
                         Posting as{" "}
                         <span className={postAnon ? "text-[#64748B]" : "text-[#E11D48]"}>
                           {postAnon ? "Anonymous" : currentUser}
@@ -330,13 +510,14 @@ export default function SubmitPage() {
                     </div>
                   </label>
                 </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center justify-end gap-3 pt-2">
                   <button
                     type="button"
                     onClick={() => router.push("/")}
-                    className="px-5 py-2 border border-[#1E1E2E] text-[#94A3B8] hover:bg-[#1A1A28] rounded-lg text-sm font-bold transition-colors"
+                    className="px-5 py-2 border border-slate-200 dark:border-[#1E1E2E] text-[#94A3B8] hover:bg-slate-100 dark:bg-[#1A1A28] rounded-lg text-sm font-bold transition-colors"
                   >
                     Cancel
                   </button>
@@ -364,7 +545,7 @@ export default function SubmitPage() {
           {/* Right: Sidebar */}
           <div className="w-64 shrink-0 hidden lg:block space-y-3">
             {/* Posting rules */}
-            <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl overflow-hidden">
+            <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl overflow-hidden">
               <div className="bg-gradient-to-r from-[#E11D48] to-[#7C3AED] px-3 py-2.5">
                 <p className="text-white text-xs font-bold">📌 Posting Rules</p>
               </div>
@@ -376,22 +557,11 @@ export default function SubmitPage() {
                   "4. No hate speech or threats",
                   "5. Keep it real, keep it raw",
                 ].map((rule) => (
-                  <div key={rule} className="text-[#94A3B8] text-xs border-b border-[#1E1E2E] pb-2 last:border-0 last:pb-0">
+                  <div key={rule} className="text-[#94A3B8] text-xs border-b border-slate-200 dark:border-[#1E1E2E] pb-2 last:border-0 last:pb-0">
                     {rule}
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* Tips card */}
-            <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-4">
-              <p className="text-[#E2E8F0] text-xs font-bold mb-2">💡 Tips for a viral post</p>
-              <ul className="text-[#64748B] text-xs space-y-1.5 list-disc list-inside">
-                <li>Start with a hook that stops scrollers</li>
-                <li>Be specific — details make stories believable</li>
-                <li>End with the outcome or twist</li>
-                <li>Use an alias people will remember</li>
-              </ul>
             </div>
           </div>
         </div>

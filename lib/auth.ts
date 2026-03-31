@@ -1,104 +1,255 @@
-// ── Keys ─────────────────────────────────────────────────────────────────────
-const USERS_KEY = "rns_users";
-const SESSION_KEY = "rns_session";
+import { supabase } from "./supabase";
 
-// ── Admin credentials (hardcoded, unique) ────────────────────────────────────
-export const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "Revenge@Admin2026";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 export interface AuthUser {
+  id: string;
   username: string;
+  email: string;
   isAdmin: boolean;
 }
 
-interface StoredUser {
-  username: string;
-  password: string;
-  email?: string;
+// Common disposable / temp email domains — blocked on signup
+const BLOCKED_DOMAINS = new Set([
+  "mailinator.com","guerrillamail.com","guerrillamail.net","guerrillamail.org",
+  "guerrillamail.biz","guerrillamail.de","guerrillamail.info","grr.la","sharklasers.com",
+  "guerrillamailblock.com","spam4.me","trashmail.com","trashmail.me","trashmail.net",
+  "trashmail.at","trashmail.io","trashmail.org","trash-mail.at","dispostable.com",
+  "yopmail.com","yopmail.fr","cool.fr.nf","jetable.fr.nf","nospam.ze.tc","nomail.xl.cx",
+  "mega.zik.dj","speed.1s.fr","courriel.fr.nf","moncourrier.fr.nf","monemail.fr.nf",
+  "monmail.fr.nf","tempmail.com","temp-mail.org","temp-mail.ru","tempmail.net",
+  "tempinbox.com","throwam.com","throwam.net","mailnull.com","spamgourmet.com",
+  "spamgourmet.net","spamgourmet.org","spamgourmet.com","getairmail.com","filzmail.com",
+  "throwam.com","discard.email","spamfree24.org","maildrop.cc","mailnesia.com",
+  "mailnull.com","spamheremerc.com","tempr.email","discard.email","fakeinbox.com",
+  "mailnew.com","mailscrap.com","mailtemp.info","meltmail.com","momentics.ru",
+  "moredates.com","nobulk.com","noclickemail.com","nogmailspam.info","nomail.pw",
+  "nomail.xl.cx","nospamfor.us","nospamthanks.info","notmailinator.com","nowmymail.com",
+  "objectmail.com","obobbo.com","odnorazovoe.ru","oneoffmail.com","onewaymail.com",
+  "opentrash.com","owlpic.com","pookmail.com","proxymail.eu.org","putthisinyourspamdatabase.com",
+  "qq.com","rcpt.at","reallymymail.com","reconmail.com","recyclemail.dk",
+  "0-mail.com","0815.ru","0clickemail.com","0wnd.net","0wnd.org","10minutemail.com",
+  "10minutemail.net","10minutemail.org","20minutemail.com","20minutemail.it",
+  "disposableaddress.com","disposableemailaddresses.com","disposableinbox.com",
+  "fakemailgenerator.com","fakemail.fr","throwablemail.com","throwam.com",
+  "spambox.us","spamcannibal.org","spamcannon.com","spamcannon.net","spamdaemon.com",
+  "spamex.com","spamfree.eu","spamgob.com","spamherelots.com","spamspot.com",
+  "spamstack.net","spamthisplease.com","spamtrail.com","spamtroll.net","tempsky.com",
+  "tmailinator.com","trbvm.com","treinamento.cf","trbvm.com","trbvn.com",
+  "emailondeck.com","sneakemail.com","safetymail.info","sogetthis.com","spaml.de",
+]);
+
+function isValidEmailFormat(email: string): boolean {
+  return /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function getStoredUsers(): StoredUser[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
-  } catch {
-    return [];
-  }
+function isBlockedEmail(email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase();
+  return !!domain && BLOCKED_DOMAINS.has(domain);
 }
 
-function saveStoredUsers(users: StoredUser[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/** Register a new user. Returns an error string on failure, null on success. */
-export function signUp(username: string, password: string, email?: string): string | null {
+/** Register a new user. Returns error string on failure, null on success. */
+export async function signUp(
+  email: string,
+  password: string,
+  username: string,
+  avatarUrl?: string,
+  avatarEmoji?: string
+): Promise<string | null> {
   const trimmed = username.trim().toLowerCase();
-  if (!trimmed || !password) return "Username and password are required.";
-  if (trimmed.length < 3) return "Username must be at least 3 characters.";
+  if (!trimmed || trimmed.length < 3) return "Username must be at least 3 characters.";
   if (password.length < 6) return "Password must be at least 6 characters.";
-  if (trimmed === ADMIN_USERNAME) return "That username is reserved.";
 
-  const users = getStoredUsers();
-  if (users.find((u) => u.username === trimmed)) return "Username already taken.";
+  const cleanEmail = email.trim().toLowerCase();
+  if (!isValidEmailFormat(cleanEmail)) return "Please enter a valid email address.";
+  if (isBlockedEmail(cleanEmail)) return "Temporary/disposable email addresses are not allowed.";
 
-  users.push({ username: trimmed, password, email });
-  saveStoredUsers(users);
-  // auto-login after signup
-  setSession({ username: trimmed, isAdmin: false });
+  const { data: existing } = await supabase
+    .from("profiles")
+    .select("username")
+    .eq("username", trimmed)
+    .maybeSingle();
+
+  if (existing) return "Username already taken.";
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: {
+      emailRedirectTo: undefined,
+      data: {
+        username: trimmed,
+        display_name: username.trim(),
+        avatar_url: avatarUrl || null,
+        avatar_emoji: avatarEmoji || null,
+      },
+    },
+  });
+  if (error) return error.message;
+  if (!data.user) return "Signup failed. Please try again.";
+  // If email confirmation is enabled but we want to auto-login, sign in immediately
+  if (data.session === null && data.user) {
+    const { error: loginErr } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (loginErr) return null; // account created, just needs login
+  }
   return null;
 }
 
-/** Login. Returns an error string on failure, null on success. */
-export function login(username: string, password: string): string | null {
-  const trimmed = username.trim().toLowerCase();
-  if (!trimmed || !password) return "Username and password are required.";
-
-  // Admin check
-  if (trimmed === ADMIN_USERNAME) {
-    if (password !== ADMIN_PASSWORD) return "Invalid admin credentials.";
-    setSession({ username: ADMIN_USERNAME, isAdmin: true });
-    return null;
-  }
-
-  const users = getStoredUsers();
-  const user = users.find((u) => u.username === trimmed);
-  if (!user || user.password !== password) return "Incorrect username or password.";
-
-  setSession({ username: trimmed, isAdmin: false });
+/** Step 1 of OTP signup: send verification code to email */
+export async function sendSignupVerification(email: string): Promise<string | null> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!isValidEmailFormat(cleanEmail)) return "Please enter a valid email address.";
+  if (isBlockedEmail(cleanEmail)) return "Temporary/disposable email addresses are not allowed.";
+  const res = await fetch("/api/send-signup-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: cleanEmail }),
+  });
+  const data = await res.json();
+  if (!res.ok) return data.error || "Failed to send verification code.";
   return null;
 }
 
-export function logout() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(SESSION_KEY);
-  }
+/** Step 2 of OTP signup: verify the email code */
+export async function verifySignupOtp(email: string, token: string): Promise<string | null> {
+  const res = await fetch("/api/verify-signup-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: email.trim(), code: token.trim() }),
+  });
+  const data = await res.json();
+  if (!res.ok) return data.error || "Invalid or expired code. Please try again.";
+  return null;
 }
 
-export function getSession(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
-  } catch {
+/** Step 3 of OTP signup: register with email + password after email verified */
+export async function completeSignup(
+  email: string,
+  username: string,
+  password: string,
+  avatarUrl?: string,
+  avatarEmoji?: string,
+): Promise<string | null> {
+  // Use server-side admin route to create user with email pre-confirmed
+  const res = await fetch("/api/complete-signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: email.trim(), password, username, avatarUrl, avatarEmoji }),
+  });
+  const result = await res.json();
+  if (!res.ok) return result.error || "Failed to create account.";
+
+  // Sign in after account created
+  const { error: signInErr } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (signInErr) return signInErr.message;
+
+  return null;
+}
+
+/** Login with email + password. Returns error string on failure, null on success. */
+export async function login(email: string, password: string): Promise<string | null> {
+  clearSessionCache();
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (error) return "Invalid email or password.";
+  return null;
+}
+
+/** Send a 6-digit OTP to the given email. Returns error string or null. */
+export async function sendOtp(email: string): Promise<string | null> {
+  const res = await fetch("/api/send-login-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json();
+  if (!res.ok) return data.error || "Failed to send code.";
+  return null;
+}
+
+/** Verify the OTP code. Returns error string or null on success. */
+export async function verifyOtp(email: string, token: string): Promise<string | null> {
+  const res = await fetch("/api/verify-login-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code: token }),
+  });
+  const data = await res.json();
+  if (!res.ok) return data.error || "Invalid or expired OTP. Please try again.";
+
+  // Use the hashed token to establish a session
+  if (data.token) {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: data.token,
+      type: "magiclink",
+    });
+    if (error) return "Failed to sign in. Please try again.";
+  }
+  return null;
+}
+
+/** Send password reset email. Returns error string or null. */
+export async function sendPasswordReset(email: string): Promise<string | null> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (error) return error.message;
+  return null;
+}
+
+/** Sign out the current user. */
+export async function logout(): Promise<void> {
+  clearSessionCache();
+  await supabase.auth.signOut();
+}
+
+// In-memory session cache — avoids repeated Supabase round-trips
+let _sessionCache: AuthUser | null = null;
+let _sessionCacheAt = 0;
+const SESSION_TTL = 60_000; // 1 minute
+
+/** Invalidate the cached session (call on login/logout). */
+export function clearSessionCache() {
+  _sessionCache = null;
+  _sessionCacheAt = 0;
+}
+
+/** Get the current logged-in user with profile. Returns null if not logged in. */
+export async function getSession(): Promise<AuthUser | null> {
+  // Return cached value if fresh
+  if (_sessionCache && Date.now() - _sessionCacheAt < SESSION_TTL) {
+    return _sessionCache;
+  }
+
+  // getSession() reads from local storage — no network call for the auth part
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    _sessionCache = null;
     return null;
   }
-}
+  const user = session.user;
 
-function setSession(user: AuthUser) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-}
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("username, is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
 
-/** Seeds a demo user on first load if no users exist yet. */
-export function initDemoUser() {
-  if (typeof window === "undefined") return;
-  const users = getStoredUsers();
-  if (!users.find((u) => u.username === "demouser")) {
-    users.push({ username: "demouser", password: "Story@123" });
-    saveStoredUsers(users);
+  if (!profile) {
+    _sessionCache = null;
+    return null;
   }
+
+  _sessionCache = {
+    id: user.id,
+    username: profile.username,
+    email: user.email || "",
+    isAdmin: profile.is_admin || false,
+  };
+  _sessionCacheAt = Date.now();
+  return _sessionCache;
 }
 

@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
+import RNLoader from "@/components/RNLoader";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { addCommunity, getUserCommunities } from "@/lib/storage";
+import { addCommunity, getUserCommunities, joinCommunity } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
 import type { Community } from "@/types";
 
@@ -20,41 +21,49 @@ const COLOR_OPTIONS = [
 export default function NewCommunityPage() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUsername, setCurrentUsername] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [emoji, setEmoji] = useState("🔥");
   const [color, setColor] = useState("#E11D48");
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const session = getSession();
-    if (!session) {
-      router.replace("/login?redirect=/communities/new");
-    } else {
-      setAuthChecked(true);
+    async function check() {
+      const session = await getSession();
+      if (!session) {
+        router.replace("/login?redirect=/communities/new");
+      } else {
+        setCurrentUserId(session.id);
+        setCurrentUsername(session.username);
+        setAuthChecked(true);
+      }
     }
+    check();
   }, [router]);
 
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-[#E11D48] border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  if (!authChecked) return <RNLoader />;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleBanner = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setError("Banner max size is 5 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => setBannerPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     const trimmed = name.trim();
     if (!trimmed) { setError("Community name is required."); return; }
-    if (trimmed.length < 3) { setError("Name must be at least 3 characters."); return; }
-    if (trimmed.length > 30) { setError("Name must be 30 characters or less."); return; }
 
-    // Check for duplicates (built-in + user-created)
     const BUILT_IN = ["Betrayal","Revenge","Karma","Toxic Love","Workplace","Family Drama","Friendships","Trust Issues"];
-    const existing = getUserCommunities().map((c) => c.name.toLowerCase());
+    const existing = (await getUserCommunities()).map((c) => c.name.toLowerCase());
     if (
       BUILT_IN.some((b) => b.toLowerCase() === trimmed.toLowerCase()) ||
       existing.includes(trimmed.toLowerCase())
@@ -64,22 +73,25 @@ export default function NewCommunityPage() {
     }
 
     setLoading(true);
-    const session = getSession();
+    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const community: Community = {
-      id: Date.now().toString(),
+      id: slug,
       name: trimmed,
       emoji,
       color,
       description: description.trim(),
-      createdBy: session?.username ?? "anonymous",
+      createdBy: currentUsername || "anonymous",
       createdAt: new Date().toISOString(),
+      bannerUrl: bannerPreview || undefined,
     };
-    addCommunity(community);
-    setTimeout(() => router.push("/"), 400);
+    await addCommunity(community, currentUserId);
+    // Auto-join the community as creator
+    if (currentUserId) await joinCommunity(slug, currentUserId);
+    setTimeout(() => router.push(`/communities/${slug}`), 400);
   };
 
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <div className="min-h-screen">
 
       <div className="max-w-2xl mx-auto px-4 py-10">
         {/* Breadcrumb */}
@@ -89,18 +101,18 @@ export default function NewCommunityPage() {
           <span className="text-[#94A3B8]">Create Community</span>
         </div>
 
-        <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-2xl overflow-hidden">
+        <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-2xl overflow-hidden">
           <div className="h-1" style={{ background: "linear-gradient(90deg, #E11D48, #7C3AED)" }} />
 
           <div className="p-8">
-            <h1 className="text-white text-2xl font-black mb-1">Create a Community</h1>
+            <h1 className="text-slate-900 dark:text-white text-2xl font-black mb-1">Create a Community</h1>
             <p className="text-[#475569] text-sm mb-8">
               Add a new story category that others can post to.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Preview */}
-              <div className="flex items-center gap-3 p-4 bg-[#1A1A28] border border-[#2A2A3E] rounded-xl">
+              <div className="flex items-center gap-3 p-4 bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] rounded-xl">
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
                   style={{ background: color + "22", border: `1px solid ${color}44` }}
@@ -108,10 +120,10 @@ export default function NewCommunityPage() {
                   {emoji}
                 </div>
                 <div>
-                  <p className="text-white font-bold text-sm">
+                  <p className="font-bold text-sm" style={{ color: name.trim() ? "white" : color }}>
                     {name.trim() || "Community Name"}
                   </p>
-                  <p className="text-[#475569] text-xs mt-0.5">
+                  <p className="text-xs mt-0.5" style={{ color: description.trim() ? "#94A3B8" : color + "BB" }}>
                     {description.trim() || "Your community description"}
                   </p>
                 </div>
@@ -133,11 +145,9 @@ export default function NewCommunityPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Cheating Partners"
-                  maxLength={30}
                   required
-                  className="w-full bg-[#1A1A28] border border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-3 text-white placeholder-[#475569] text-sm outline-none transition-colors"
+                  className="w-full bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-3 text-slate-900 dark:text-white placeholder-[#475569] text-sm outline-none transition-colors"
                 />
-                <p className="text-[#2A2A40] text-xs mt-1 text-right">{name.length}/30</p>
               </div>
 
               {/* Description */}
@@ -149,9 +159,8 @@ export default function NewCommunityPage() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="What kind of stories belong here?"
-                  maxLength={120}
                   rows={2}
-                  className="w-full bg-[#1A1A28] border border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-3 text-white placeholder-[#475569] text-sm outline-none transition-colors resize-none"
+                  className="w-full bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-3 text-slate-900 dark:text-white placeholder-[#475569] text-sm outline-none transition-colors resize-none"
                 />
               </div>
 
@@ -169,7 +178,7 @@ export default function NewCommunityPage() {
                       className={`w-10 h-10 rounded-lg text-xl transition-colors ${
                         emoji === e
                           ? "bg-[#E11D48]/20 border-2 border-[#E11D48]/60"
-                          : "bg-[#1A1A28] border border-[#2A2A3E] hover:bg-[#2A2A3E]"
+                          : "bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] hover:bg-[#2A2A3E]"
                       }`}
                     >
                       {e}
@@ -198,6 +207,39 @@ export default function NewCommunityPage() {
                 </div>
               </div>
 
+              {/* Banner upload */}
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-2 uppercase tracking-wide">
+                  Banner Image <span className="normal-case text-[#2A2A40] font-normal">(optional)</span>
+                </label>
+                {bannerPreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-300 dark:border-[#2A2A3E]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={bannerPreview} alt="banner preview" className="w-full h-32 object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setBannerPreview(null)}
+                      className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/70 text-white text-xs hover:bg-black transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-3 px-4 py-4 bg-slate-100 dark:bg-[#1A1A28] border border-dashed border-slate-300 dark:border-[#2A2A3E] hover:border-[#E11D48]/50 rounded-xl cursor-pointer transition-colors group">
+                    <div className="w-9 h-9 rounded-lg bg-slate-50 dark:bg-[#08080E] flex items-center justify-center shrink-0 group-hover:bg-[#E11D48]/10 transition-colors">
+                      <svg className="w-4 h-4 text-[#64748B] group-hover:text-[#E11D48]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[#94A3B8] text-xs font-semibold group-dark:hover:text-white hover:text-slate-800 transition-colors">Upload a banner</p>
+                      <p className="text-[#475569] text-[10px] mt-0.5">PNG, JPG · max 5 MB · recommended 1200×300</p>
+                    </div>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleBanner} />
+                  </label>
+                )}
+              </div>
+
               {error && (
                 <div className="flex items-center gap-2 bg-[#E11D48]/10 border border-[#E11D48]/20 rounded-xl px-4 py-3">
                   <svg className="w-4 h-4 text-[#E11D48] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,7 +253,7 @@ export default function NewCommunityPage() {
               <div className="flex items-center justify-end gap-3 pt-2">
                 <Link
                   href="/"
-                  className="px-5 py-2.5 rounded-xl text-sm font-bold text-[#64748B] hover:text-white hover:bg-[#1A1A28] transition-colors"
+                  className="px-5 py-2.5 rounded-xl text-sm font-bold text-[#64748B] dark:hover:text-white hover:text-slate-800 hover:bg-slate-100 dark:bg-[#1A1A28] transition-colors"
                 >
                   Cancel
                 </Link>

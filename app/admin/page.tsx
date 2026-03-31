@@ -1,354 +1,946 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
+import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { posts as staticPosts } from "@/data/posts";
-import {
-  getUserAddedPosts,
-  saveUserAddedPosts,
-  getVoteAdjustments,
-  getDeletedPostIds,
-  saveDeletedPostIds,
-} from "@/lib/storage";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import type { Post } from "@/types";
+import { supabase } from "@/lib/supabase";
 
-const CATEGORIES = [
-  "Betrayal",
-  "Revenge",
-  "Karma",
-  "Toxic Love",
-  "Workplace",
-  "Family Drama",
-  "Friendships",
-  "Trust Issues",
-];
+//  Types 
 
-type FormState = {
+type Tab =
+  | "overview"
+  | "users"
+  | "communities"
+  | "posts"
+  | "comments"
+  | "reports"
+  | "categories"
+  | "settings"
+  | "logs"
+  | "security"
+  | "announcements";
+
+interface UserRow {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_emoji: string;
+  is_admin: boolean;
+  is_banned: boolean;
+  is_shadowbanned: boolean;
+  ban_reason: string | null;
+  role: string;
+  is_verified: boolean;
+  created_at: string;
+}
+
+interface CommunityRow {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  created_by: string;
+  created_at: string;
+  is_locked: boolean;
+  is_nsfw: boolean;
+  is_featured: boolean;
+}
+
+interface PostRow {
+  id: number;
   title: string;
-  content: string;
-  fullStory: string;
   author: string;
   category: string;
-};
+  votes: number;
+  is_hidden: boolean;
+  is_pinned: boolean;
+  is_locked: boolean;
+  is_nsfw: boolean;
+  created_at: string;
+}
 
-const EMPTY_FORM: FormState = {
-  title: "",
-  content: "",
-  fullStory: "",
-  author: "",
-  category: "Betrayal",
-};
+interface CommentRow {
+  id: string;
+  post_id: number;
+  author: string;
+  body: string;
+  is_hidden: boolean;
+  created_at: string;
+}
 
-export default function Admin() {
-  const router = useRouter();
-  const [authChecked, setAuthChecked] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [deletedIds, setDeletedIds] = useState<number[]>([]);
-  const [voteAdjustments, setVoteAdjustments] = useState<Record<number, number>>({});
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"active" | "deleted">("active");
+interface ReportRow {
+  id: string;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+}
 
-  // Auth guard
-  useEffect(() => {
-    const session = getSession();
-    if (!session?.isAdmin) {
-      router.replace("/login?redirect=/admin");
-    } else {
-      setIsAdmin(true);
-    }
-    setAuthChecked(true);
-  }, [router]);
+interface LogRow {
+  id: string;
+  admin_username: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: string | null;
+  created_at: string;
+}
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    setUserPosts(getUserAddedPosts());
-    setDeletedIds(getDeletedPostIds());
-    setVoteAdjustments(getVoteAdjustments());
-  }, [isAdmin]);
+interface Analytics {
+  totalUsers: number;
+  totalPosts: number;
+  totalComments: number;
+  totalCommunities: number;
+  bannedUsers: number;
+  newUsersWeek: number;
+  categoryBreakdown: Record<string, number>;
+}
 
-  const update = (field: string, value: string) =>
-    setForm((f) => ({ ...f, [field]: value }));
+interface Category {
+  id: string;
+  name: string;
+}
 
-  const allPosts = useMemo(() => {
-    return [...staticPosts, ...userPosts].map((p) => ({
-      ...p,
-      votes: p.votes + (voteAdjustments[p.id] || 0),
-      deleted: deletedIds.includes(p.id),
-    }));
-  }, [userPosts, voteAdjustments, deletedIds]);
+//  Helpers 
 
-  const activePosts = allPosts.filter((p) => !p.deleted);
-  const deletedPosts = allPosts.filter((p) => p.deleted);
-  const totalVotes = activePosts.reduce((s, p) => s + p.votes, 0);
-  const topPost = [...activePosts].sort((a, b) => b.votes - a.votes)[0];
+async function getToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token || "";
+}
 
-  const handleDelete = (id: number) => {
-    const next = [...deletedIds, id];
-    setDeletedIds(next);
-    saveDeletedPostIds(next);
+async function adminFetch(url: string, opts?: RequestInit) {
+  const token = await getToken();
+  return fetch(url, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(opts?.headers || {}),
+    },
+  });
+}
+
+//  Sub-components 
+
+function Badge({ color, children }: { color: string; children: React.ReactNode }) {
+  const colors: Record<string, string> = {
+    red: "bg-red-900/40 text-red-400 border-red-800",
+    green: "bg-green-900/40 text-green-400 border-green-800",
+    yellow: "bg-yellow-900/40 text-yellow-400 border-yellow-800",
+    blue: "bg-blue-900/40 text-blue-400 border-blue-800",
+    purple: "bg-purple-900/40 text-purple-400 border-purple-800",
+    gray: "bg-[#343536] text-[#818384] border-slate-200 dark:border-[#343536]",
+    orange: "bg-orange-900/40 text-orange-400 border-orange-800",
   };
-
-  const handleRestore = (id: number) => {
-    const next = deletedIds.filter((d) => d !== id);
-    setDeletedIds(next);
-    saveDeletedPostIds(next);
-  };
-
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    const newPost: Post = {
-      id: Date.now(),
-      title: form.title.trim(),
-      content: form.content.trim(),
-      fullStory: form.fullStory.trim() || form.content.trim(),
-      author: form.author.trim() || "Admin",
-      category: form.category,
-      votes: 1,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...userPosts, newPost];
-    setUserPosts(updated);
-    saveUserAddedPosts(updated);
-    setForm(EMPTY_FORM);
-    setShowForm(false);
-    setSaving(false);
-  };
-
-  const displayList = activeTab === "active" ? activePosts : deletedPosts;
-
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-[#E11D48] border-t-transparent animate-spin" />
-      </div>
-    );
-  }
-  if (!isAdmin) return null;
-
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${colors[color] || colors.gray}`}>
+      {children}
+    </span>
+  );
+}
 
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-xs text-[#818384] mb-6">
-          <Link href="/" className="hover:underline hover:text-[#D7DADC]">r/RevengeNation</Link>
-          <span>›</span>
-          <span className="text-[#D7DADC]">Admin Panel</span>
-        </div>
+function ActionBtn({ onClick, color, children, disabled }: { onClick: () => void; color: string; children: React.ReactNode; disabled?: boolean }) {
+  const colors: Record<string, string> = {
+    red: "border-red-800 text-red-400 hover:bg-red-950",
+    green: "border-green-800 text-green-400 hover:bg-green-950",
+    yellow: "border-yellow-800 text-yellow-400 hover:bg-yellow-950",
+    blue: "border-blue-800 text-blue-400 hover:bg-blue-950",
+    gray: "border-slate-200 dark:border-[#343536] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC] hover:border-[#818384]",
+    orange: "border-[#FF4500]/40 text-[#FF4500] hover:bg-[#FF4500]/10",
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-xs px-2.5 py-1 bg-white dark:bg-[#1A1A1B] border rounded transition-colors disabled:opacity-40 ${colors[color] || colors.gray}`}
+    >
+      {children}
+    </button>
+  );
+}
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-xl font-bold text-[#D7DADC]">u/Admin Dashboard</h1>
-            <p className="text-[#818384] text-xs mt-0.5">Manage stories and view community stats</p>
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-slate-900 dark:text-[#D7DADC] font-bold text-lg">{title}</h2>
+      {subtitle && <p className="text-[#818384] text-xs mt-0.5">{subtitle}</p>}
+    </div>
+  );
+}
+
+//  Overview 
+
+function Overview({ analytics }: { analytics: Analytics | null }) {
+  if (!analytics) return <div className="text-[#818384] text-sm">Loading analytics...</div>;
+  const stats = [
+    { label: "Total Users", value: analytics.totalUsers, icon: "", color: "blue" },
+    { label: "Total Posts", value: analytics.totalPosts, icon: "", color: "orange" },
+    { label: "Comments", value: analytics.totalComments, icon: "", color: "purple" },
+    { label: "Communities", value: analytics.totalCommunities, icon: "", color: "green" },
+    { label: "Banned Users", value: analytics.bannedUsers, icon: "", color: "red" },
+    { label: "New Users (7d)", value: analytics.newUsersWeek, icon: "", color: "yellow" },
+  ];
+  const colorBorder: Record<string, string> = {
+    blue: "border-blue-800/40", orange: "border-[#FF4500]/30", purple: "border-purple-800/40",
+    green: "border-green-800/40", red: "border-red-800/40", yellow: "border-yellow-800/40",
+  };
+  return (
+    <div>
+      <SectionHeader title="Overview" subtitle="Platform-wide analytics" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+        {stats.map((s) => (
+          <div key={s.label} className={`bg-white dark:bg-[#1A1A1B] border ${colorBorder[s.color]} rounded-[4px] p-4`}>
+            <div className="text-2xl mb-2">{s.icon}</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-[#D7DADC]">{s.value.toLocaleString()}</div>
+            <div className="text-[#818384] text-xs mt-0.5">{s.label}</div>
           </div>
-          <button
-            onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-[#FF4500] hover:bg-[#E03D00] text-white text-sm font-bold rounded-full transition-colors"
-          >
-            + Add Story
-          </button>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-          {[
-            { label: "Active Stories", value: activePosts.length, icon: "📖" },
-            { label: "Total Votes", value: totalVotes.toLocaleString(), icon: "🔥" },
-            { label: "User Submitted", value: userPosts.filter((p) => !deletedIds.includes(p.id)).length, icon: "✍️" },
-            { label: "Removed", value: deletedPosts.length, icon: "🗑️" },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="bg-[#272729] border border-[#343536] rounded-[4px] p-4"
-            >
-              <div className="text-2xl mb-2">{stat.icon}</div>
-              <div className="text-xl font-black text-[#D7DADC]">{stat.value}</div>
-              <div className="text-[#818384] text-xs mt-0.5">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Top story */}
-        {topPost && (
-          <div className="bg-[#272729] border border-[#FF4500]/30 rounded-[4px] p-4 mb-5">
-            <div className="text-xs text-[#FF4500] font-bold uppercase tracking-widest mb-2">🏆 Top Post</div>
-            <Link href={`/story/${topPost.id}`} className="text-[#D7DADC] font-semibold hover:text-white hover:underline block text-sm mb-1">
-              {topPost.title}
-            </Link>
-            <div className="text-[#818384] text-xs">
-              ⬆ {topPost.votes.toLocaleString()} votes · u/{topPost.author} · r/{topPost.category}
-            </div>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="bg-[#272729] border border-[#343536] rounded-[4px] overflow-hidden">
-          <div className="flex border-b border-[#343536]">
-            {(["active", "deleted"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-5 py-3 text-sm font-bold capitalize transition-colors border-b-2 ${
-                  activeTab === tab
-                    ? "text-[#D7DADC] border-[#D7DADC]"
-                    : "text-[#818384] border-transparent hover:text-[#D7DADC] hover:bg-[#343536]"
-                }`}
-              >
-                {tab} ({tab === "active" ? activePosts.length : deletedPosts.length})
-              </button>
-            ))}
-          </div>
-
-          <div className="divide-y divide-[#343536]">
-            {displayList.length === 0 ? (
-              <div className="py-16 text-center">
-                <div className="text-3xl mb-3">{activeTab === "active" ? "📭" : "🗑️"}</div>
-                <p className="text-[#818384] text-sm">No {activeTab} posts</p>
-              </div>
-            ) : (
-              displayList.map((post) => (
-                <div
-                  key={post.id}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-[#1A1A1B] transition-colors"
-                >
-                  {/* Vote */}
-                  <div className="text-center shrink-0 w-10">
-                    <div className="text-[#FF4500] font-bold text-sm">{post.votes >= 1000 ? `${(post.votes/1000).toFixed(1)}k` : post.votes}</div>
-                    <div className="text-[#818384] text-xs">votes</div>
-                  </div>
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[#D7DADC] text-sm font-medium truncate">{post.title}</p>
-                    <p className="text-[#818384] text-xs mt-0.5">
-                      r/{post.category} · u/{post.author}
-                    </p>
-                  </div>
-                  {/* Actions */}
-                  <div className="flex gap-2 shrink-0">
-                    <Link
-                      href={`/story/${post.id}`}
-                      className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] text-[#818384] hover:text-[#D7DADC] rounded transition-colors"
-                    >
-                      View
-                    </Link>
-                    {activeTab === "deleted" ? (
-                      <button
-                        onClick={() => handleRestore(post.id)}
-                        className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-green-800 text-green-400 hover:bg-green-950 rounded transition-colors"
-                      >
-                        Restore
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleDelete(post.id)}
-                        className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-[#FF4500]/40 text-[#FF4500] hover:bg-[#FF4500]/10 rounded transition-colors"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        ))}
       </div>
-
-      {/* Add Story Modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-[#272729] border border-[#343536] rounded-[4px] w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-[#343536]">
-              <h3 className="text-[#D7DADC] font-bold">Add Story</h3>
-              <button
-                onClick={() => setShowForm(false)}
-                className="text-[#818384] hover:text-[#D7DADC] transition-colors text-xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-            <form onSubmit={handleAdd} className="p-4 space-y-3">
-              <div>
-                <label className="text-[#818384] text-xs font-bold block mb-1.5">Title *</label>
-                <input
-                  required
-                  value={form.title}
-                  onChange={(e) => update("title", e.target.value)}
-                  placeholder="Story title..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-[#818384] text-xs font-bold block mb-1.5">Short Preview *</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={form.content}
-                  onChange={(e) => update("content", e.target.value)}
-                  placeholder="2–3 sentence hook shown on feed cards..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
-                />
-              </div>
-              <div>
-                <label className="text-[#818384] text-xs font-bold block mb-1.5">Full Story</label>
-                <textarea
-                  rows={6}
-                  value={form.fullStory}
-                  onChange={(e) => update("fullStory", e.target.value)}
-                  placeholder="The complete story..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[#818384] text-xs font-bold block mb-1.5">Author</label>
-                  <input
-                    value={form.author}
-                    onChange={(e) => update("author", e.target.value)}
-                    placeholder="Anonymous"
-                    className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
-                  />
+      {Object.keys(analytics.categoryBreakdown).length > 0 && (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] p-4">
+          <div className="text-xs text-[#818384] font-bold uppercase tracking-widest mb-3">Posts by Category</div>
+          <div className="space-y-2">
+            {Object.entries(analytics.categoryBreakdown).sort((a, b) => b[1] - a[1]).map(([cat, count]) => {
+              const max = Math.max(...Object.values(analytics.categoryBreakdown), 1);
+              const pct = Math.round((count / max) * 100);
+              return (
+                <div key={cat} className="flex items-center gap-3">
+                  <div className="text-[#818384] text-xs w-28 shrink-0">{cat}</div>
+                  <div className="flex-1 bg-slate-50 dark:bg-[#272729] rounded-full h-1.5">
+                    <div className="bg-[#FF4500] h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="text-[#818384] text-xs w-8 text-right">{count}</div>
                 </div>
-                <div>
-                  <label className="text-[#818384] text-xs font-bold block mb-1.5">Category</label>
-                  <select
-                    value={form.category}
-                    onChange={(e) => update("category", e.target.value)}
-                    className="w-full bg-[#1A1A1B] border border-[#343536] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] text-sm outline-none"
-                  >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c} className="bg-[#272729]">{c}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="flex-1 py-2.5 border border-[#818384] text-[#D7DADC] hover:bg-[#343536] text-sm font-bold rounded-full transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-2.5 bg-[#FF4500] hover:bg-[#E03D00] disabled:opacity-50 text-white text-sm font-bold rounded-full transition-colors"
-                >
-                  {saving ? "Adding…" : "Add Story"}
-                </button>
-              </div>
-            </form>
+              );
+            })}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+//  Users 
+
+function Users() {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(false);
+  const [banModal, setBanModal] = useState<UserRow | null>(null);
+  const [banReason, setBanReason] = useState("");
+  const [banDuration, setBanDuration] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch(`/api/admin/users?search=${encodeURIComponent(search)}&filter=${filter}`);
+    const data = await res.json();
+    setUsers(data.users || []);
+    setLoading(false);
+  }, [search, filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (action: string, userId: string, extra?: object) => {
+    await adminFetch("/api/admin/users", { method: "POST", body: JSON.stringify({ action, userId, ...extra }) });
+    load();
+  };
+
+  const handleBan = async () => {
+    if (!banModal) return;
+    await act("ban", banModal.id, { reason: banReason, duration: banDuration ? parseInt(banDuration) : undefined });
+    setBanModal(null); setBanReason(""); setBanDuration("");
+  };
+
+  return (
+    <div>
+      <SectionHeader title="User Management" subtitle="Manage all registered users" />
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search username..."
+          className="flex-1 min-w-[180px] bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-1.5 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none focus:border-[#818384]" />
+        {["all","banned","admin","verified"].map((f) => (
+          <button key={f} onClick={() => setFilter(f)} className={`text-xs px-3 py-1.5 rounded border capitalize transition-colors ${filter===f ? "bg-[#FF4500] border-[#FF4500] text-white" : "bg-white dark:bg-[#1A1A1B] border-slate-200 dark:border-[#343536] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC]"}`}>{f}</button>
+        ))}
+      </div>
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {users.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No users found</div>}
+          {users.map((u) => (
+            <div key={u.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="text-2xl shrink-0">{u.avatar_emoji || ""}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium">u/{u.username}</span>
+                  {u.is_admin && <Badge color="purple">Admin</Badge>}
+                  {u.is_banned && <Badge color="red">Banned</Badge>}
+                  {u.is_shadowbanned && <Badge color="yellow">Shadowbanned</Badge>}
+                  {u.is_verified && <Badge color="blue"> Verified</Badge>}
+                  {u.role === "moderator" && <Badge color="green">Mod</Badge>}
+                </div>
+                <div className="text-[#818384] text-xs mt-0.5">
+                  {u.display_name && `${u.display_name}  `}Joined {new Date(u.created_at).toLocaleDateString()}
+                  {u.ban_reason && `   ${u.ban_reason}`}
+                </div>
+              </div>
+              <div className="flex gap-1.5 flex-wrap justify-end shrink-0">
+                {u.is_banned ? <ActionBtn color="green" onClick={() => act("unban", u.id)}>Unban</ActionBtn>
+                  : <ActionBtn color="red" onClick={() => setBanModal(u)}>Ban</ActionBtn>}
+                {u.is_shadowbanned ? <ActionBtn color="green" onClick={() => act("unshadowban", u.id)}>Un-Shadow</ActionBtn>
+                  : <ActionBtn color="yellow" onClick={() => act("shadowban", u.id)}>Shadow</ActionBtn>}
+                {!u.is_verified && <ActionBtn color="blue" onClick={() => act("verify", u.id)}>Verify</ActionBtn>}
+                <ActionBtn color="gray" onClick={() => act("force_logout", u.id)}>Logout</ActionBtn>
+                <select value={u.role || "user"} onChange={(e) => act("set_role", u.id, { role: e.target.value })}
+                  className="text-xs bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] text-[#818384] rounded px-1.5 py-1">
+                  <option value="user">User</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <ActionBtn color="red" onClick={() => { if (confirm(`Delete u/${u.username}? This cannot be undone.`)) act("delete", u.id); }}>Delete</ActionBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {banModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+          <div className="bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded-[4px] w-full max-w-md p-5">
+            <h3 className="text-slate-900 dark:text-[#D7DADC] font-bold mb-4">Ban u/{banModal.username}</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[#818384] text-xs font-bold block mb-1">Reason</label>
+                <input value={banReason} onChange={(e) => setBanReason(e.target.value)} placeholder="Violated community rules..."
+                  className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[#818384] text-xs font-bold block mb-1">Duration (hours, empty = permanent)</label>
+                <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} placeholder="Empty = permanent"
+                  className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setBanModal(null)} className="text-sm px-4 py-2 bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] text-[#818384] rounded hover:text-slate-900 dark:text-[#D7DADC]">Cancel</button>
+                <button onClick={handleBan} className="text-sm px-4 py-2 bg-red-900 border border-red-700 text-red-300 rounded hover:bg-red-800">Ban User</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Communities 
+
+function Communities() {
+  const [communities, setCommunities] = useState<CommunityRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch("/api/admin/content?type=communities");
+    const data = await res.json();
+    setCommunities(data.communities || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (action: string, id: string) => {
+    await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "community", targetId: id }) });
+    load();
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Community Management" subtitle="Manage all communities" />
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {communities.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No communities</div>}
+          {communities.map((c) => (
+            <div key={c.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="text-2xl shrink-0 mt-0.5">{c.emoji}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Link href={`/communities/${c.id}`} className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium hover:underline">r/{c.name}</Link>
+                  {c.is_locked && <Badge color="yellow">Locked</Badge>}
+                  {c.is_nsfw && <Badge color="red">NSFW</Badge>}
+                  {c.is_featured && <Badge color="green"> Featured</Badge>}
+                </div>
+                <div className="text-[#818384] text-xs mt-0.5 truncate">{c.description || "No description"}  by {c.created_by}  {new Date(c.created_at).toLocaleDateString()}</div>
+              </div>
+              <div className="flex gap-1.5 flex-wrap justify-end shrink-0">
+                <ActionBtn color={c.is_locked ? "green" : "yellow"} onClick={() => act("toggle_lock", c.id)}>{c.is_locked ? "Unlock" : "Lock"}</ActionBtn>
+                <ActionBtn color={c.is_nsfw ? "gray" : "red"} onClick={() => act("toggle_nsfw", c.id)}>{c.is_nsfw ? "Un-NSFW" : "NSFW"}</ActionBtn>
+                <ActionBtn color={c.is_featured ? "gray" : "green"} onClick={() => act("toggle_feature", c.id)}>{c.is_featured ? "Unfeature" : "Feature"}</ActionBtn>
+                <ActionBtn color="red" onClick={() => { if (confirm(`Delete r/${c.name}?`)) act("delete", c.id); }}>Delete</ActionBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Posts 
+
+function Posts() {
+  const [posts, setPosts] = useState<PostRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch("/api/admin/content?type=posts");
+    const data = await res.json();
+    setPosts(data.posts || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (action: string, id: number | string) => {
+    await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
+    load();
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Post Moderation" subtitle="Manage all posts across the platform" />
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {posts.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No posts</div>}
+          {posts.map((p) => (
+            <div key={p.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="text-center shrink-0 w-10 mt-0.5">
+                <div className="text-[#FF4500] font-bold text-sm">{p.votes}</div>
+                <div className="text-[#818384] text-[10px]">votes</div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Link href={`/story/${p.id}`} className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium hover:underline">{p.title}</Link>
+                  {p.is_pinned && <Badge color="green"> Pinned</Badge>}
+                  {p.is_locked && <Badge color="yellow"> Locked</Badge>}
+                  {p.is_nsfw && <Badge color="red">NSFW</Badge>}
+                  {p.is_hidden && <Badge color="gray">Hidden</Badge>}
+                </div>
+                <div className="text-[#818384] text-xs mt-0.5">u/{p.author}  r/{p.category}  {new Date(p.created_at).toLocaleDateString()}</div>
+              </div>
+              <div className="flex gap-1.5 flex-wrap justify-end shrink-0">
+                <ActionBtn color={p.is_pinned ? "gray" : "green"} onClick={() => act("toggle_pin", p.id)}>{p.is_pinned ? "Unpin" : "Pin"}</ActionBtn>
+                <ActionBtn color={p.is_locked ? "gray" : "yellow"} onClick={() => act("toggle_lock", p.id)}>{p.is_locked ? "Unlock" : "Lock"}</ActionBtn>
+                <ActionBtn color={p.is_nsfw ? "gray" : "red"} onClick={() => act("toggle_nsfw", p.id)}>{p.is_nsfw ? "Un-NSFW" : "NSFW"}</ActionBtn>
+                <ActionBtn color={p.is_hidden ? "blue" : "gray"} onClick={() => act("toggle_hide", p.id)}>{p.is_hidden ? "Unhide" : "Hide"}</ActionBtn>
+                <ActionBtn color="red" onClick={() => { if (confirm("Delete this post?")) act("delete", p.id); }}>Delete</ActionBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Comments 
+
+function Comments() {
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch("/api/admin/content?type=comments");
+    const data = await res.json();
+    setComments(data.comments || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (action: string, id: string) => {
+    await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "comment", targetId: id }) });
+    load();
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Comment Moderation" subtitle="Manage all comments" />
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {comments.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No comments</div>}
+          {comments.map((c) => (
+            <div key={c.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-slate-900 dark:text-[#D7DADC] text-xs font-medium">u/{c.author}</span>
+                  <span className="text-[#818384] text-[10px]">on post #{c.post_id}</span>
+                  {c.is_hidden && <Badge color="gray">Hidden</Badge>}
+                  <span className="text-[#818384] text-[10px]">{new Date(c.created_at).toLocaleDateString()}</span>
+                </div>
+                <p className="text-[#818384] text-xs line-clamp-2">{c.body}</p>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                <ActionBtn color={c.is_hidden ? "blue" : "gray"} onClick={() => act("toggle_hide", c.id)}>{c.is_hidden ? "Unhide" : "Hide"}</ActionBtn>
+                <ActionBtn color="red" onClick={() => { if (confirm("Delete this comment?")) act("delete", c.id); }}>Delete</ActionBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Reports 
+
+function Reports() {
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch(`/api/admin/settings?type=reports&status=${statusFilter}`);
+    const data = await res.json();
+    setReports(data.reports || []);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const resolve = async (reportId: string, resolution: string) => {
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "resolve_report", reportId, resolution }) });
+    load();
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Reports & Flags" subtitle="User-submitted reports queue" />
+      <div className="flex gap-2 mb-4">
+        {["pending","resolved","dismissed"].map((s) => (
+          <button key={s} onClick={() => setStatusFilter(s)} className={`text-xs px-3 py-1.5 rounded border capitalize transition-colors ${statusFilter===s ? "bg-[#FF4500] border-[#FF4500] text-white" : "bg-white dark:bg-[#1A1A1B] border-slate-200 dark:border-[#343536] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC]"}`}>{s}</button>
+        ))}
+      </div>
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {reports.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No {statusFilter} reports</div>}
+          {reports.map((r) => (
+            <div key={r.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <Badge color={r.target_type === "user" ? "purple" : r.target_type === "post" ? "orange" : "gray"}>{r.target_type}</Badge>
+                  <span className="text-[#818384] text-xs">ID: {r.target_id.slice(0, 12)}</span>
+                  <span className="text-[#818384] text-[10px]">{new Date(r.created_at).toLocaleDateString()}</span>
+                </div>
+                <p className="text-slate-900 dark:text-[#D7DADC] text-xs">{r.reason}</p>
+              </div>
+              {r.status === "pending" && (
+                <div className="flex gap-1.5 shrink-0">
+                  <ActionBtn color="green" onClick={() => resolve(r.id, "resolved")}>Resolve</ActionBtn>
+                  <ActionBtn color="gray" onClick={() => resolve(r.id, "dismissed")}>Dismiss</ActionBtn>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Categories 
+
+function Categories() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [newCat, setNewCat] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch("/api/admin/settings?type=categories");
+    const data = await res.json();
+    setCategories(data.categories || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addCat = async () => {
+    if (!newCat.trim()) return;
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "add_category", name: newCat.trim() }) });
+    setNewCat(""); load();
+  };
+
+  const deleteCat = async (id: string, name: string) => {
+    if (!confirm(`Delete category "${name}"?`)) return;
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "delete_category", id }) });
+    load();
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Category Management" subtitle="Add or remove story categories" />
+      <div className="flex gap-2 mb-4">
+        <input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addCat()} placeholder="New category name..."
+          className="flex-1 bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-1.5 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none focus:border-[#818384]" />
+        <button onClick={addCat} className="px-4 py-1.5 bg-[#FF4500] hover:bg-[#E03D00] text-white text-sm font-bold rounded transition-colors">Add</button>
+      </div>
+      {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+          {categories.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No categories</div>}
+          {categories.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+              <div className="flex-1">
+                <span className="text-slate-900 dark:text-[#D7DADC] text-sm">{c.name}</span>
+                <span className="text-[#818384] text-xs ml-2 font-mono">/{c.id}</span>
+              </div>
+              <ActionBtn color="red" onClick={() => deleteCat(c.id, c.name)}>Delete</ActionBtn>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Site Settings 
+
+function SiteSettings() {
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [videos, setVideos] = useState<{ id: string; url: string; title: string }[]>([]);
+  const [newVideoUrl, setNewVideoUrl] = useState("");
+  const [newVideoTitle, setNewVideoTitle] = useState("");
+  const [videoSaving, setVideoSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await adminFetch("/api/admin/settings?type=settings");
+    const data = await res.json();
+    const s = data.settings || {};
+    setSettings(s);
+    try { setVideos(JSON.parse(s.featured_videos || "[]")); } catch { setVideos([]); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setLoading(true);
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "update_settings", settings }) });
+    setSaved(true); setTimeout(() => setSaved(false), 2000); setLoading(false);
+  };
+
+  const toggle = (key: string) => setSettings((s) => ({ ...s, [key]: s[key] === "true" ? "false" : "true" }));
+
+  const saveVideos = async (updated: { id: string; url: string; title: string }[]) => {
+    setVideoSaving(true);
+    const newSettings = { ...settings, featured_videos: JSON.stringify(updated) };
+    setSettings(newSettings);
+    setVideos(updated);
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "update_settings", settings: { featured_videos: JSON.stringify(updated) } }) });
+    setVideoSaving(false);
+  };
+
+  const addVideo = async () => {
+    if (!newVideoUrl.trim()) return;
+    const updated = [...videos, { id: Date.now().toString(), url: newVideoUrl.trim(), title: newVideoTitle.trim() }];
+    await saveVideos(updated);
+    setNewVideoUrl(""); setNewVideoTitle("");
+  };
+
+  const removeVideo = async (id: string) => {
+    await saveVideos(videos.filter((v) => v.id !== id));
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Site Settings" subtitle="Configure global platform settings" />
+      {loading && Object.keys(settings).length === 0 ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] p-4 space-y-4">
+            <div>
+              <label className="text-[#818384] text-xs font-bold block mb-1.5">Site Name</label>
+              <input value={settings.site_name || ""} onChange={(e) => setSettings((s) => ({ ...s, site_name: e.target.value }))}
+                className="w-full bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] text-sm outline-none focus:border-[#818384]" />
+            </div>
+            <div>
+              <label className="text-[#818384] text-xs font-bold block mb-1.5">Max Posts Per Hour (per user)</label>
+              <input type="number" value={settings.max_posts_per_hour || "10"} onChange={(e) => setSettings((s) => ({ ...s, max_posts_per_hour: e.target.value }))}
+                className="w-full bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] text-sm outline-none focus:border-[#818384]" />
+            </div>
+            {[
+              { key: "maintenance_mode", label: "Maintenance Mode", desc: "Take site offline temporarily" },
+              { key: "nsfw_enabled", label: "NSFW Content Enabled", desc: "Allow NSFW posts and communities" },
+              { key: "dms_enabled", label: "Direct Messages Enabled", desc: "Allow users to message each other" },
+            ].map(({ key, label, desc }) => (
+              <div key={key} className="flex items-center justify-between">
+                <div>
+                  <div className="text-slate-900 dark:text-[#D7DADC] text-sm">{label}</div>
+                  <div className="text-[#818384] text-xs">{desc}</div>
+                </div>
+                <button onClick={() => toggle(key)} className={`relative inline-flex w-11 h-6 rounded-full transition-colors ${settings[key]==="true" ? "bg-[#FF4500]" : "bg-[#343536]"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings[key]==="true" ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={save} disabled={loading} className="px-6 py-2 bg-[#FF4500] hover:bg-[#E03D00] text-white text-sm font-bold rounded-full transition-colors disabled:opacity-50">
+            {saved ? "✅ Saved!" : "Save Settings"}
+          </button>
+
+          {/* Featured Videos */}
+          <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] p-4 space-y-3">
+            <div className="text-slate-900 dark:text-[#D7DADC] text-sm font-bold mb-1">🎥 Featured Videos (Sidebar)</div>
+            <p className="text-[#818384] text-xs">YouTube links added here appear in the sidebar for all users.</p>
+            {videos.map((v) => (
+              <div key={v.id} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded">
+                <div className="flex-1 min-w-0">
+                  <div className="text-slate-900 dark:text-[#D7DADC] text-xs font-semibold truncate">{v.title || "Untitled"}</div>
+                  <div className="text-[#818384] text-[10px] truncate">{v.url}</div>
+                </div>
+                <button onClick={() => removeVideo(v.id)} className="text-red-400 hover:text-red-300 text-xs px-2 py-1 border border-red-800 rounded transition-colors shrink-0">Remove</button>
+              </div>
+            ))}
+            <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-[#343536]">
+              <input
+                value={newVideoTitle}
+                onChange={(e) => setNewVideoTitle(e.target.value)}
+                placeholder="Video title (optional)"
+                className="w-full bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] text-xs outline-none focus:border-[#818384]"
+              />
+              <div className="flex gap-2">
+                <input
+                  value={newVideoUrl}
+                  onChange={(e) => setNewVideoUrl(e.target.value)}
+                  placeholder="YouTube URL (e.g. https://youtu.be/xxxxx)"
+                  className="flex-1 bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] text-xs outline-none focus:border-[#818384]"
+                />
+                <button onClick={addVideo} disabled={videoSaving || !newVideoUrl.trim()} className="px-4 py-2 bg-[#FF4500] hover:bg-[#E03D00] text-white text-xs font-bold rounded transition-colors disabled:opacity-50">
+                  {videoSaving ? "..." : "Add"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Announcements 
+
+function Announcements() {
+  const [message, setMessage] = useState("");
+  const [current, setCurrent] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminFetch("/api/admin/settings?type=settings").then((r) => r.json()).then((d) => {
+      const ann = d.settings?.site_announcement || "";
+      setCurrent(ann); setMessage(ann);
+    });
+  }, []);
+
+  const send = async () => {
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "send_announcement", message }) });
+    setCurrent(message); setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  const clear = async () => {
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "send_announcement", message: "" }) });
+    setMessage(""); setCurrent("");
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Site Announcements" subtitle="Send a global banner to all visitors" />
+      <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] p-4 space-y-4">
+        {current && (
+          <div className="bg-[#FF4500]/10 border border-[#FF4500]/30 rounded p-3">
+            <div className="text-[#FF4500] text-xs font-bold mb-1">CURRENT ANNOUNCEMENT</div>
+            <p className="text-slate-900 dark:text-[#D7DADC] text-sm">{current}</p>
+          </div>
+        )}
+        <div>
+          <label className="text-[#818384] text-xs font-bold block mb-1.5">Message</label>
+          <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Write a site-wide announcement..."
+            className="w-full bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none focus:border-[#818384] resize-none" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={send} className="px-5 py-2 bg-[#FF4500] hover:bg-[#E03D00] text-white text-sm font-bold rounded-full transition-colors">{saved ? " Published!" : "Publish"}</button>
+          {current && <button onClick={clear} className="px-5 py-2 bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] text-[#818384] text-sm rounded-full hover:text-slate-900 dark:text-[#D7DADC] transition-colors">Clear</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+//  Security 
+
+function Security() {
+  const [ipBans, setIpBans] = useState<Array<{ id: string; ip_address: string; reason: string; created_at: string }>>([]);
+  const [logs, setLogs] = useState<LogRow[]>([]);
+  const [newIp, setNewIp] = useState("");
+  const [newIpReason, setNewIpReason] = useState("");
+  const [tab, setTab] = useState<"logs" | "ipbans">("logs");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [logsRes, ipRes] = await Promise.all([
+      adminFetch("/api/admin/settings?type=logs"),
+      adminFetch("/api/admin/settings?type=ip_bans"),
+    ]);
+    const logsData = await logsRes.json();
+    const ipData = await ipRes.json();
+    setLogs(logsData.logs || []);
+    setIpBans(ipData.ip_bans || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addIpBan = async () => {
+    if (!newIp.trim()) return;
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "add_ip_ban", ip: newIp.trim(), reason: newIpReason }) });
+    setNewIp(""); setNewIpReason(""); load();
+  };
+
+  const removeIpBan = async (id: string) => {
+    await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "remove_ip_ban", id }) });
+    load();
+  };
+
+  const actionColor = (action: string) => {
+    if (action.includes("ban") || action.includes("delete")) return "text-red-400";
+    if (action.includes("unban") || action.includes("restore")) return "text-green-400";
+    if (action.includes("update") || action.includes("setting")) return "text-blue-400";
+    return "text-[#818384]";
+  };
+
+  return (
+    <div>
+      <SectionHeader title="Security & Audit" subtitle="Admin logs and IP ban management" />
+      <div className="flex gap-2 mb-4">
+        {(["logs","ipbans"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`text-xs px-3 py-1.5 rounded border transition-colors ${tab===t ? "bg-[#FF4500] border-[#FF4500] text-white" : "bg-white dark:bg-[#1A1A1B] border-slate-200 dark:border-[#343536] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC]"}`}>
+            {t === "logs" ? "Audit Logs" : "IP Bans"}
+          </button>
+        ))}
+      </div>
+      {tab === "logs" && (
+        loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
+          <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+            {logs.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No logs yet</div>}
+            {logs.map((l) => (
+              <div key={l.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-slate-900 dark:text-[#D7DADC] text-xs font-medium">u/{l.admin_username}</span>
+                    <span className={`text-xs font-mono ${actionColor(l.action)}`}>{l.action}</span>
+                    {l.target_type && <Badge color="gray">{l.target_type}</Badge>}
+                  </div>
+                  {l.details && <p className="text-[#818384] text-xs mt-0.5 truncate">{l.details}</p>}
+                </div>
+                <div className="text-[#818384] text-[10px] shrink-0 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {tab === "ipbans" && (
+        <div className="space-y-4">
+          <div className="flex gap-2 flex-wrap">
+            <input value={newIp} onChange={(e) => setNewIp(e.target.value)} placeholder="IP address (e.g. 1.2.3.4)"
+              className="flex-1 min-w-[150px] bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-1.5 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none focus:border-[#818384]" />
+            <input value={newIpReason} onChange={(e) => setNewIpReason(e.target.value)} placeholder="Reason..."
+              className="flex-1 min-w-[150px] bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded px-3 py-1.5 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none focus:border-[#818384]" />
+            <button onClick={addIpBan} className="px-4 py-1.5 bg-red-900 border border-red-700 text-red-300 text-sm rounded hover:bg-red-800 transition-colors">Ban IP</button>
+          </div>
+          <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
+            {ipBans.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No IP bans</div>}
+            {ipBans.map((b) => (
+              <div key={b.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:bg-[#272729] transition-colors">
+                <div className="flex-1">
+                  <div className="text-slate-900 dark:text-[#D7DADC] text-sm font-mono">{b.ip_address}</div>
+                  {b.reason && <div className="text-[#818384] text-xs">{b.reason}</div>}
+                </div>
+                <div className="text-[#818384] text-xs">{new Date(b.created_at).toLocaleDateString()}</div>
+                <ActionBtn color="green" onClick={() => removeIpBan(b.id)}>Remove</ActionBtn>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+//  Main Admin Page 
+
+export default function AdminPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [adminUser, setAdminUser] = useState<{ username: string } | null>(null);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+
+  const activeTab = (searchParams.get("tab") ?? "overview") as Tab;
+
+  useEffect(() => {
+    async function init() {
+      const session = await getSession();
+      if (!session?.isAdmin) {
+        router.replace("/login?redirect=/admin");
+        setAuthChecked(true);
+        return;
+      }
+      setAdminUser({ username: session.username });
+      setAuthChecked(true);
+
+      const { data } = await supabase.auth.getSession();
+      const tk = data.session?.access_token || "";
+      const res = await fetch("/api/admin/settings?type=analytics", { headers: { Authorization: `Bearer ${tk}` } });
+      if (res.ok) {
+        const d = await res.json();
+        setAnalytics(d);
+      }
+    }
+    init();
+  }, [router]);
+
+  if (!authChecked) return <RNLoader />;
+  if (!adminUser) return null;
+
+  return (
+    <div className="min-h-screen">
+      <div className="max-w-5xl mx-auto px-4 py-6">
+        <div className="mb-6">
+          <div className="flex items-center gap-2 text-xs text-[#818384] mb-1">
+            <Link href="/" className="hover:underline hover:text-slate-900 dark:text-[#D7DADC]">r/RevengeNation</Link>
+            <span></span>
+            <span className="text-slate-900 dark:text-[#D7DADC]">Admin Panel</span>
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-[#D7DADC]"> Admin Panel</h1>
+          <p className="text-[#818384] text-xs mt-0.5">Logged in as u/{adminUser.username}</p>
+        </div>
+
+        <div className="flex-1 min-w-0">
+            {activeTab === "overview" && <Overview analytics={analytics} />}
+            {activeTab === "users" && <Users />}
+            {activeTab === "communities" && <Communities />}
+            {activeTab === "posts" && <Posts />}
+            {activeTab === "comments" && <Comments />}
+            {activeTab === "reports" && <Reports />}
+            {activeTab === "categories" && <Categories />}
+            {activeTab === "announcements" && <Announcements />}
+            {activeTab === "settings" && <SiteSettings />}
+            {activeTab === "security" && <Security />}
+          </div>
+      </div>
     </div>
   );
 }

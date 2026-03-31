@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
+import RNLoader from "@/components/RNLoader";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
@@ -8,7 +9,6 @@ import {
   getUserAddedPosts,
   getAllComments,
   getUpvotedPosts,
-  getDownvotedPosts,
   getUserCommunities,
   getProfile,
   saveProfile,
@@ -32,77 +32,73 @@ function timeAgo(dateStr: string) {
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<{ username: string; isAdmin: boolean } | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("Posts");
   const [editing, setEditing] = useState(false);
 
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [myComments, setMyComments] = useState<Comment[]>([]);
   const [upvotedIds, setUpvotedIds] = useState<Set<number>>(new Set());
-  const [downvotedIds, setDownvotedIds] = useState<Set<number>>(new Set());
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [profile, setProfile] = useState<UserProfile>({ username: "", bio: "", displayName: "" });
   const [editForm, setEditForm] = useState({ displayName: "", bio: "" });
 
   useEffect(() => {
-    const session = getSession();
-    if (!session) {
-      router.replace("/login?redirect=/profile");
-      return;
-    }
-    setUser(session);
+    async function load() {
+      const session = await getSession();
+      if (!session) {
+        router.replace("/login?redirect=/profile");
+        return;
+      }
+      setUser(session);
+      setAuthChecked(true); // show page immediately once auth confirmed
 
-    const added = getUserAddedPosts();
-    const mine = added.filter((p) => p.author === session.username || p.author === "Anonymous");
-    // for "anonymous" posts, we can't reliably attribute, so only show named ones
-    const namedMine = added.filter((p) => p.author === session.username);
-    setMyPosts(namedMine);
+      const [added, allComments, up, communities, profileData] = await Promise.all([
+        getUserAddedPosts(),
+        getAllComments(),
+        getUpvotedPosts(session.id),
+        getUserCommunities(),
+        getProfile(session.username),
+      ]);
 
-    const allComments = getAllComments();
-    setMyComments(allComments.filter((c) => c.author === session.username));
+      const namedMine = added.filter((p) => p.author === session.username);
+      setMyPosts(namedMine);
+      setMyComments(allComments.filter((c) => c.author === session.username));
+      setUpvotedIds(up);
+      setCommunities(communities);
 
-    setUpvotedIds(getUpvotedPosts());
-    setDownvotedIds(getDownvotedPosts());
-    setCommunities(getUserCommunities());
-
-    // load static + user posts for upvoted lookup
-    import("@/data/posts").then(({ posts: staticPosts }) => {
+      const { posts: staticPosts } = await import("@/data/posts");
       setAllPosts([...staticPosts, ...added]);
-    });
 
-    const p = getProfile(session.username);
-    setProfile(p);
-    setEditForm({ displayName: p.displayName || session.username, bio: p.bio || "" });
-
-    setMounted(true);
+      setProfile(profileData);
+      setEditForm({ displayName: profileData.displayName || session.username, bio: profileData.bio || "" });
+      setDataLoaded(true);
+    }
+    load();
   }, [router]);
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!user) return;
     const updated: UserProfile = {
       username: user.username,
       displayName: editForm.displayName.trim() || user.username,
       bio: editForm.bio.trim(),
+      avatarUrl: profile.avatarUrl,
+      avatarEmoji: profile.avatarEmoji,
     };
-    saveProfile(updated);
+    await saveProfile(updated);
     setProfile(updated);
     setEditing(false);
   };
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-[#E11D48] border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  if (!authChecked) return <RNLoader />;
 
   const upvotedPosts = allPosts.filter((p) => upvotedIds.has(p.id));
-  const downvotedPosts = allPosts.filter((p) => downvotedIds.has(p.id));
 
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <div className="min-h-screen">
       <div className="max-w-3xl mx-auto px-4 py-8">
 
         {/* Breadcrumb */}
@@ -113,19 +109,18 @@ export default function ProfilePage() {
         </div>
 
         {/* Profile card */}
-        <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-2xl overflow-hidden mb-6">
+        <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-2xl overflow-hidden mb-6">
           <div className="h-1" style={{ background: "linear-gradient(90deg, #E11D48, #7C3AED)" }} />
           <div className="p-6">
             {editing ? (
               <div className="space-y-4">
-                <h2 className="text-white font-bold text-lg mb-4">Edit Profile</h2>
+                <h2 className="text-slate-900 dark:text-white font-bold text-lg mb-4">Edit Profile</h2>
                 <div>
                   <label className="text-[#64748B] text-xs font-semibold uppercase tracking-wide block mb-1.5">Display Name</label>
                   <input
                     value={editForm.displayName}
                     onChange={(e) => setEditForm((f) => ({ ...f, displayName: e.target.value }))}
-                    maxLength={30}
-                    className="w-full bg-[#1A1A28] border border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
+                    className="w-full bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
                   />
                 </div>
                 <div>
@@ -133,12 +128,11 @@ export default function ProfilePage() {
                   <textarea
                     value={editForm.bio}
                     onChange={(e) => setEditForm((f) => ({ ...f, bio: e.target.value }))}
-                    maxLength={160}
                     rows={3}
                     placeholder="Tell something about yourself…"
-                    className="w-full bg-[#1A1A28] border border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors resize-none placeholder-[#475569]"
+                    className="w-full bg-slate-100 dark:bg-[#1A1A28] border border-slate-300 dark:border-[#2A2A3E] focus:border-[#E11D48]/50 rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors resize-none placeholder-[#475569]"
                   />
-                  <p className="text-[#475569] text-xs mt-1 text-right">{editForm.bio.length}/160</p>
+
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -149,7 +143,7 @@ export default function ProfilePage() {
                   </button>
                   <button
                     onClick={() => setEditing(false)}
-                    className="px-5 py-2 border border-[#1E1E2E] text-[#94A3B8] hover:bg-[#1A1A28] text-sm font-bold rounded-lg transition-colors"
+                    className="px-5 py-2 border border-slate-200 dark:border-[#1E1E2E] text-[#94A3B8] hover:bg-slate-100 dark:bg-[#1A1A28] text-sm font-bold rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
@@ -169,7 +163,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h1 className="text-white text-xl font-black">{profile.displayName || user?.username}</h1>
+                    <h1 className="text-slate-900 dark:text-white text-xl font-black">{profile.displayName || user?.username}</h1>
                     {user?.isAdmin && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E11D48]/15 text-[#E11D48] border border-[#E11D48]/20">Admin</span>
                     )}
@@ -203,7 +197,7 @@ export default function ProfilePage() {
                 </div>
                 <button
                   onClick={() => setEditing(true)}
-                  className="shrink-0 px-4 py-2 text-xs font-bold border border-[#2A2A3E] text-[#94A3B8] hover:text-white hover:bg-[#1A1A28] rounded-lg transition-colors"
+                  className="shrink-0 px-4 py-2 text-xs font-bold border border-slate-300 dark:border-[#2A2A3E] text-[#94A3B8] dark:hover:text-white hover:text-slate-800 hover:bg-slate-100 dark:bg-[#1A1A28] rounded-lg transition-colors"
                 >
                   Edit Profile
                 </button>
@@ -213,14 +207,14 @@ export default function ProfilePage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-1 mb-6">
+        <div className="flex gap-1 bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-1 mb-6">
           {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${
                 activeTab === tab
-                  ? "bg-[#1A1A28] text-white border border-[#2A2A3E]"
+                  ? "bg-slate-50 dark:bg-[#1A1A28] text-slate-900 dark:text-white border border-slate-300 dark:border-[#2A2A3E]"
                   : "text-[#475569] hover:text-[#94A3B8]"
               }`}
             >
@@ -232,7 +226,9 @@ export default function ProfilePage() {
         {/* Tab: Posts */}
         {activeTab === "Posts" && (
           <div className="space-y-3">
-            {myPosts.length === 0 ? (
+            {!dataLoaded ? (
+              <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" /></div>
+            ) : myPosts.length === 0 ? (
               <EmptyState text="You haven't posted anything yet." cta={{ href: "/submit", label: "Create a Post" }} />
             ) : (
               myPosts.map((post) => <PostRow key={post.id} post={post} />)
@@ -243,7 +239,9 @@ export default function ProfilePage() {
         {/* Tab: Comments */}
         {activeTab === "Comments" && (
           <div className="space-y-3">
-            {myComments.length === 0 ? (
+            {!dataLoaded ? (
+              <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" /></div>
+            ) : myComments.length === 0 ? (
               <EmptyState text="You haven't commented on anything yet." />
             ) : (
               myComments.map((c) => <CommentRow key={c.id} comment={c} allPosts={allPosts} />)
@@ -254,7 +252,9 @@ export default function ProfilePage() {
         {/* Tab: Upvoted */}
         {activeTab === "Upvoted" && (
           <div className="space-y-3">
-            {upvotedPosts.length === 0 ? (
+            {!dataLoaded ? (
+              <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" /></div>
+            ) : upvotedPosts.length === 0 ? (
               <EmptyState text="You haven't upvoted any posts yet." />
             ) : (
               upvotedPosts.map((post) => <PostRow key={post.id} post={post} dimmed />)
@@ -265,11 +265,13 @@ export default function ProfilePage() {
         {/* Tab: Communities */}
         {activeTab === "Communities" && (
           <div className="space-y-3">
-            {communities.length === 0 ? (
+            {!dataLoaded ? (
+              <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" /></div>
+            ) : communities.length === 0 ? (
               <EmptyState text="You haven't created any communities yet." cta={{ href: "/communities/new", label: "Create Community" }} />
             ) : (
               communities.map((c) => (
-                <div key={c.id} className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-4 flex items-center gap-4">
+                <div key={c.id} className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-4 flex items-center gap-4">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
                     style={{ backgroundColor: c.color + "22" }}
@@ -295,7 +297,7 @@ function PostRow({ post, dimmed }: { post: Post; dimmed?: boolean }) {
   return (
     <Link
       href={`/story/${post.id}`}
-      className={`block bg-[#0F0F18] border border-[#1E1E2E] hover:border-[#2A2A3E] rounded-xl p-4 transition-colors ${dimmed ? "opacity-75" : ""}`}
+      className={`block bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-xl p-4 transition-colors ${dimmed ? "opacity-75" : ""}`}
     >
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
@@ -324,7 +326,7 @@ function CommentRow({ comment, allPosts }: { comment: Comment; allPosts: Post[] 
   return (
     <Link
       href={`/story/${comment.postId}#comments`}
-      className="block bg-[#0F0F18] border border-[#1E1E2E] hover:border-[#2A2A3E] rounded-xl p-4 transition-colors"
+      className="block bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-xl p-4 transition-colors"
     >
       {post && <p className="text-[#475569] text-xs mb-1.5 truncate">on: {post.title}</p>}
       <p className="text-[#94A3B8] text-sm leading-relaxed line-clamp-3">{comment.body}</p>
@@ -335,7 +337,7 @@ function CommentRow({ comment, allPosts }: { comment: Comment; allPosts: Post[] 
 
 function EmptyState({ text, cta }: { text: string; cta?: { href: string; label: string } }) {
   return (
-    <div className="bg-[#0F0F18] border border-[#1E1E2E] rounded-xl p-10 text-center">
+    <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-10 text-center">
       <p className="text-[#475569] text-sm mb-4">{text}</p>
       {cta && (
         <Link

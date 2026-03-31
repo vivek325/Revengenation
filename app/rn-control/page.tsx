@@ -1,15 +1,17 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useMemo } from "react";
+import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { posts as staticPosts } from "@/data/posts";
 import {
   getUserAddedPosts,
-  saveUserAddedPosts,
+  saveUserAddedPost,
   getVoteAdjustments,
   getDeletedPostIds,
-  saveDeletedPostIds,
+  markPostDeleted,
+  markPostRestored,
 } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
 import type { Post } from "@/types";
@@ -55,21 +57,26 @@ export default function Admin() {
 
   // Auth guard
   useEffect(() => {
-    const session = getSession();
-    if (!session?.isAdmin) {
-      router.replace("/login?redirect=/admin");
-    } else {
+    async function init() {
+      const session = await getSession();
+      if (!session?.isAdmin) {
+        router.replace("/login?redirect=/admin");
+        setAuthChecked(true);
+        return;
+      }
       setIsAdmin(true);
+      setAuthChecked(true);
+      const [posts, deletedIdsData, adj] = await Promise.all([
+        getUserAddedPosts(),
+        getDeletedPostIds(),
+        getVoteAdjustments(),
+      ]);
+      setUserPosts(posts);
+      setDeletedIds(deletedIdsData);
+      setVoteAdjustments(adj);
     }
-    setAuthChecked(true);
+    init();
   }, [router]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    setUserPosts(getUserAddedPosts());
-    setDeletedIds(getDeletedPostIds());
-    setVoteAdjustments(getVoteAdjustments());
-  }, [isAdmin]);
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -87,21 +94,20 @@ export default function Admin() {
   const totalVotes = activePosts.reduce((s, p) => s + p.votes, 0);
   const topPost = [...activePosts].sort((a, b) => b.votes - a.votes)[0];
 
-  const handleDelete = (id: number) => {
-    const next = [...deletedIds, id];
-    setDeletedIds(next);
-    saveDeletedPostIds(next);
+  const handleDelete = async (id: number) => {
+    setDeletedIds((prev) => [...prev, id]);
+    await markPostDeleted(id);
   };
 
-  const handleRestore = (id: number) => {
-    const next = deletedIds.filter((d) => d !== id);
-    setDeletedIds(next);
-    saveDeletedPostIds(next);
+  const handleRestore = async (id: number) => {
+    setDeletedIds((prev) => prev.filter((d) => d !== id));
+    await markPostRestored(id);
   };
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    const session = await getSession();
     const newPost: Post = {
       id: Date.now(),
       title: form.title.trim(),
@@ -112,9 +118,8 @@ export default function Admin() {
       votes: 1,
       createdAt: new Date().toISOString(),
     };
-    const updated = [...userPosts, newPost];
-    setUserPosts(updated);
-    saveUserAddedPosts(updated);
+    await saveUserAddedPost(newPost, session?.id || "");
+    setUserPosts((prev) => [...prev, newPost]);
     setForm(EMPTY_FORM);
     setShowForm(false);
     setSaving(false);
@@ -122,30 +127,24 @@ export default function Admin() {
 
   const displayList = activeTab === "active" ? activePosts : deletedPosts;
 
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#08080E] flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-[#E11D48] border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  if (!authChecked) return <RNLoader />;
   if (!isAdmin) return null;
 
   return (
-    <div className="min-h-screen bg-[#08080E]">
+    <div className="min-h-screen">
 
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-[#818384] mb-6">
-          <Link href="/" className="hover:underline hover:text-[#D7DADC]">r/RevengeNation</Link>
+          <Link href="/" className="hover:underline hover:text-slate-900 dark:text-[#D7DADC]">r/RevengeNation</Link>
           <span>›</span>
-          <span className="text-[#D7DADC]">Admin Panel</span>
+          <span className="text-slate-900 dark:text-[#D7DADC]">Admin Panel</span>
         </div>
 
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-xl font-bold text-[#D7DADC]">u/Admin Dashboard</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-[#D7DADC]">u/Admin Dashboard</h1>
             <p className="text-[#818384] text-xs mt-0.5">Manage stories and view community stats</p>
           </div>
           <button
@@ -166,10 +165,10 @@ export default function Admin() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="bg-[#272729] border border-[#343536] rounded-[4px] p-4"
+              className="bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded-[4px] p-4"
             >
               <div className="text-2xl mb-2">{stat.icon}</div>
-              <div className="text-xl font-black text-[#D7DADC]">{stat.value}</div>
+              <div className="text-xl font-black text-slate-900 dark:text-[#D7DADC]">{stat.value}</div>
               <div className="text-[#818384] text-xs mt-0.5">{stat.label}</div>
             </div>
           ))}
@@ -177,9 +176,9 @@ export default function Admin() {
 
         {/* Top story */}
         {topPost && (
-          <div className="bg-[#272729] border border-[#FF4500]/30 rounded-[4px] p-4 mb-5">
+          <div className="bg-slate-50 dark:bg-[#272729] border border-[#FF4500]/30 rounded-[4px] p-4 mb-5">
             <div className="text-xs text-[#FF4500] font-bold uppercase tracking-widest mb-2">🏆 Top Post</div>
-            <Link href={`/story/${topPost.id}`} className="text-[#D7DADC] font-semibold hover:text-white hover:underline block text-sm mb-1">
+            <Link href={`/story/${topPost.id}`} className="text-slate-900 dark:text-[#D7DADC] font-semibold dark:hover:text-white hover:text-slate-800 hover:underline block text-sm mb-1">
               {topPost.title}
             </Link>
             <div className="text-[#818384] text-xs">
@@ -189,16 +188,16 @@ export default function Admin() {
         )}
 
         {/* Tabs */}
-        <div className="bg-[#272729] border border-[#343536] rounded-[4px] overflow-hidden">
-          <div className="flex border-b border-[#343536]">
+        <div className="bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded-[4px] overflow-hidden">
+          <div className="flex border-b border-slate-200 dark:border-[#343536]">
             {(["active", "deleted"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-5 py-3 text-sm font-bold capitalize transition-colors border-b-2 ${
                   activeTab === tab
-                    ? "text-[#D7DADC] border-[#D7DADC]"
-                    : "text-[#818384] border-transparent hover:text-[#D7DADC] hover:bg-[#343536]"
+                    ? "text-slate-900 dark:text-[#D7DADC] border-[#D7DADC]"
+                    : "text-[#818384] border-transparent hover:text-slate-900 dark:text-[#D7DADC] hover:bg-[#343536]"
                 }`}
               >
                 {tab} ({tab === "active" ? activePosts.length : deletedPosts.length})
@@ -206,7 +205,7 @@ export default function Admin() {
             ))}
           </div>
 
-          <div className="divide-y divide-[#343536]">
+          <div className="divide-y divide-slate-200 dark:divide-[#343536]">
             {displayList.length === 0 ? (
               <div className="py-16 text-center">
                 <div className="text-3xl mb-3">{activeTab === "active" ? "📭" : "🗑️"}</div>
@@ -216,7 +215,7 @@ export default function Admin() {
               displayList.map((post) => (
                 <div
                   key={post.id}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-[#1A1A1B] transition-colors"
+                  className="flex items-center gap-4 px-4 py-3 hover:bg-white dark:bg-[#1A1A1B] transition-colors"
                 >
                   {/* Vote */}
                   <div className="text-center shrink-0 w-10">
@@ -225,7 +224,7 @@ export default function Admin() {
                   </div>
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-[#D7DADC] text-sm font-medium truncate">{post.title}</p>
+                    <p className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium truncate">{post.title}</p>
                     <p className="text-[#818384] text-xs mt-0.5">
                       r/{post.category} · u/{post.author}
                     </p>
@@ -234,21 +233,21 @@ export default function Admin() {
                   <div className="flex gap-2 shrink-0">
                     <Link
                       href={`/story/${post.id}`}
-                      className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] text-[#818384] hover:text-[#D7DADC] rounded transition-colors"
+                      className="text-xs px-3 py-1.5 bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC] rounded transition-colors"
                     >
                       View
                     </Link>
                     {activeTab === "deleted" ? (
                       <button
                         onClick={() => handleRestore(post.id)}
-                        className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-green-800 text-green-400 hover:bg-green-950 rounded transition-colors"
+                        className="text-xs px-3 py-1.5 bg-white dark:bg-[#1A1A1B] border border-green-800 text-green-400 hover:bg-green-950 rounded transition-colors"
                       >
                         Restore
                       </button>
                     ) : (
                       <button
                         onClick={() => handleDelete(post.id)}
-                        className="text-xs px-3 py-1.5 bg-[#1A1A1B] border border-[#FF4500]/40 text-[#FF4500] hover:bg-[#FF4500]/10 rounded transition-colors"
+                        className="text-xs px-3 py-1.5 bg-white dark:bg-[#1A1A1B] border border-[#FF4500]/40 text-[#FF4500] hover:bg-[#FF4500]/10 rounded transition-colors"
                       >
                         Remove
                       </button>
@@ -264,12 +263,12 @@ export default function Admin() {
       {/* Add Story Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-[#272729] border border-[#343536] rounded-[4px] w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-[#343536]">
-              <h3 className="text-[#D7DADC] font-bold">Add Story</h3>
+          <div className="bg-slate-50 dark:bg-[#272729] border border-slate-200 dark:border-[#343536] rounded-[4px] w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#343536]">
+              <h3 className="text-slate-900 dark:text-[#D7DADC] font-bold">Add Story</h3>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-[#818384] hover:text-[#D7DADC] transition-colors text-xl leading-none"
+                className="text-[#818384] hover:text-slate-900 dark:text-[#D7DADC] transition-colors text-xl leading-none"
               >
                 ×
               </button>
@@ -282,7 +281,7 @@ export default function Admin() {
                   value={form.title}
                   onChange={(e) => update("title", e.target.value)}
                   placeholder="Story title..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
+                  className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
                 />
               </div>
               <div>
@@ -293,7 +292,7 @@ export default function Admin() {
                   value={form.content}
                   onChange={(e) => update("content", e.target.value)}
                   placeholder="2–3 sentence hook shown on feed cards..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
+                  className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
                 />
               </div>
               <div>
@@ -303,7 +302,7 @@ export default function Admin() {
                   value={form.fullStory}
                   onChange={(e) => update("fullStory", e.target.value)}
                   placeholder="The complete story..."
-                  className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
+                  className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -313,7 +312,7 @@ export default function Admin() {
                     value={form.author}
                     onChange={(e) => update("author", e.target.value)}
                     placeholder="Anonymous"
-                    className="w-full bg-[#1A1A1B] border border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
+                    className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] focus:border-[#D7DADC] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] placeholder-[#818384] text-sm outline-none transition-colors"
                   />
                 </div>
                 <div>
@@ -321,10 +320,10 @@ export default function Admin() {
                   <select
                     value={form.category}
                     onChange={(e) => update("category", e.target.value)}
-                    className="w-full bg-[#1A1A1B] border border-[#343536] focus:border-[#D7DADC] rounded px-3 py-2 text-[#D7DADC] text-sm outline-none"
+                    className="w-full bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] focus:border-[#D7DADC] rounded px-3 py-2 text-slate-900 dark:text-[#D7DADC] text-sm outline-none"
                   >
                     {CATEGORIES.map((c) => (
-                      <option key={c} value={c} className="bg-[#272729]">{c}</option>
+                      <option key={c} value={c} className="bg-slate-50 dark:bg-[#272729]">{c}</option>
                     ))}
                   </select>
                 </div>
@@ -333,7 +332,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="flex-1 py-2.5 border border-[#818384] text-[#D7DADC] hover:bg-[#343536] text-sm font-bold rounded-full transition-colors"
+                  className="flex-1 py-2.5 border border-[#818384] text-slate-900 dark:text-[#D7DADC] hover:bg-[#343536] text-sm font-bold rounded-full transition-colors"
                 >
                   Cancel
                 </button>

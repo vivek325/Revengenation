@@ -1,42 +1,15 @@
 @import "tailwindcss";
+@custom-variant dark (&:is(.dark, .dark *));
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  background-color: #08080E;
-  color: #F1F5F9;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #08080E;
-}
-::-webkit-scrollbar-thumb {
-  background: #2A2A40;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #E11D48;
-}
-
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background-color: #F1F5F9; color: #1E293B; }
+.dark body { background-color: #07090F; color: #E8EDF3; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+.dark ::-webkit-scrollbar-track { background: #07090F; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #1E2A3A; }
+::-webkit-scrollbar-thumb:hover { background: #E11D48; }
+.line-clamp-2 { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+.line-clamp-3 { display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
