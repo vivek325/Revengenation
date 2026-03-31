@@ -336,6 +336,10 @@ export interface UserProfile {
 }
 
 export async function getProfile(username: string): Promise<UserProfile> {
+  const cacheKey = `profile:${username}`;
+  const cached = getCache<UserProfile>(cacheKey, 300_000); // 5 min
+  if (cached) return cached;
+
   const { data } = await supabase
     .from("profiles")
     .select("username, bio, display_name, avatar_url, avatar_emoji")
@@ -344,13 +348,15 @@ export async function getProfile(username: string): Promise<UserProfile> {
 
   if (!data) return { username, bio: "", displayName: username };
 
-  return {
+  const result: UserProfile = {
     username: data.username,
     bio: data.bio || "",
     displayName: data.display_name || username,
     avatarUrl: data.avatar_url ?? undefined,
     avatarEmoji: data.avatar_emoji ?? undefined,
   };
+  setCache(cacheKey, result);
+  return result;
 }
 
 export async function saveProfile(profile: UserProfile): Promise<void> {

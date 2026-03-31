@@ -13,3 +13,13 @@ body { background-color: #F1F5F9; color: #1E293B; }
 ::-webkit-scrollbar-thumb:hover { background: #E11D48; }
 .line-clamp-2 { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
 .line-clamp-3 { display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
+
+/* Smooth page transitions */
+main { animation: fadeIn 0.15s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Prevent layout shift from scrollbar appearing/disappearing */
+html { scrollbar-gutter: stable; }
+
+/* Smoother button/link interactions */
+a, button { -webkit-tap-highlight-color: transparent; }

@@ -44,9 +44,10 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
       setMounted(true);
     }
     loadSession();
+    // Only re-run on actual auth changes, NOT on every route navigation
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => loadSession());
     return () => { active = false; subscription.unsubscribe(); };
-  }, [pathname]);
+  }, []); // ← empty deps: runs once on mount
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
