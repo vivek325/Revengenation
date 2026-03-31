@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -882,6 +882,14 @@ function Security() {
 //  Main Admin Page 
 
 export default function AdminPage() {
+  return (
+    <Suspense fallback={<RNLoader />}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [authChecked, setAuthChecked] = useState(false);

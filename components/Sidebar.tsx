@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import {
   Home, ShieldCheck, ChevronDown, ChevronUp, PlusCircle,
   BarChart2, Users, LayoutGrid, FileText, MessageSquare,
@@ -19,6 +19,14 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
+  return (
+    <Suspense fallback={null}>
+      <SidebarInner open={open} onClose={onClose} />
+    </Suspense>
+  );
+}
+
+function SidebarInner({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<AuthUser | null>(null);

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -29,6 +29,14 @@ const FLAIR_COLORS: Record<string, string> = {
 type ModeType = "post" | "story" | "blog";
 
 export default function SubmitPage() {
+  return (
+    <Suspense fallback={<RNLoader />}>
+      <SubmitPageInner />
+    </Suspense>
+  );
+}
+
+function SubmitPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [authChecked, setAuthChecked] = useState(false);
