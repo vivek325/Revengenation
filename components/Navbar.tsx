@@ -62,7 +62,7 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
   const handleLogout = async () => {
     await logout();
     setUser(null); setProfile(null); setProfileDropdown(false);
-    router.push("/"); router.refresh();
+    window.location.href = "/";
   };
 
   return (
