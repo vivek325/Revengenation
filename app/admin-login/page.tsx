@@ -52,25 +52,25 @@ function AdminLoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         {/* Logo / Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-2">
             <span className="text-2xl">⚔️</span>
-            <span className="text-xl font-bold text-white">RevengeNation</span>
+            <span className="text-xl font-bold text-gray-900">RevengeNation</span>
           </div>
-          <p className="text-[#818384] text-sm">Admin Portal</p>
+          <p className="text-gray-500 text-sm">Admin Portal</p>
         </div>
 
         {/* Card */}
-        <div className="bg-[#111111] border border-[#282828] rounded-xl p-6 shadow-2xl">
-          <h1 className="text-white font-semibold text-lg mb-1">Admin Sign In</h1>
-          <p className="text-[#818384] text-xs mb-6">Restricted access — admins only</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <h1 className="text-gray-900 font-semibold text-lg mb-1">Admin Sign In</h1>
+          <p className="text-gray-400 text-xs mb-6">Restricted access — admins only</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs text-[#818384] mb-1.5">Email</label>
+              <label className="block text-xs text-gray-500 mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}
@@ -78,12 +78,12 @@ function AdminLoginContent() {
                 placeholder="admin@example.com"
                 required
                 autoComplete="email"
-                className="w-full bg-[#1a1a1a] border border-[#282828] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#d7263d] transition-colors"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[#d7263d] focus:ring-1 focus:ring-[#d7263d] transition-colors"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-[#818384] mb-1.5">Password</label>
+              <label className="block text-xs text-gray-500 mb-1.5">Password</label>
               <input
                 type="password"
                 value={password}
@@ -91,13 +91,13 @@ function AdminLoginContent() {
                 placeholder="••••••••"
                 required
                 autoComplete="current-password"
-                className="w-full bg-[#1a1a1a] border border-[#282828] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#d7263d] transition-colors"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[#d7263d] focus:ring-1 focus:ring-[#d7263d] transition-colors"
               />
             </div>
 
             {error && (
-              <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-3 py-2.5">
-                <p className="text-red-400 text-xs">{error}</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                <p className="text-red-600 text-xs">{error}</p>
               </div>
             )}
 
@@ -111,9 +111,9 @@ function AdminLoginContent() {
           </form>
         </div>
 
-        <p className="text-center text-[#555] text-xs mt-6">
+        <p className="text-center text-gray-400 text-xs mt-6">
           Not an admin?{" "}
-          <a href="/" className="text-[#818384] hover:text-white transition-colors">
+          <a href="/" className="text-gray-500 hover:text-gray-800 transition-colors">
             Go home
           </a>
         </p>
