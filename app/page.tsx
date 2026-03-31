@@ -59,34 +59,31 @@ export default function Home() {
   const [featuredVideos, setFeaturedVideos] = useState<FeaturedVideo[]>([]);
   const [vidExpanded, setVidExpanded] = useState(true);
   const [expandedVideo, setExpandedVideo] = useState<FeaturedVideo | null>(null);
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(25);
   const router = useRouter();
 
   useEffect(() => {
-    async function load() {
-      const [adj, posts, deleted, comms, session, counts] = await Promise.all([
-        getVoteAdjustments(),
-        getUserAddedPosts(),
-        getDeletedPostIds(),
-        getUserCommunities(),
-        getSession(),
-        getAllCommentCounts(),
-      ]);
-      setVoteAdjustments(adj);
+    // Phase 1: critical — fetch posts + session first, render immediately
+    getUserAddedPosts().then((posts) => {
       setUserPosts(posts);
-      setDeletedIds(deleted);
-      setUserCommunities(comms);
+      setPostsLoading(false);
+    });
+
+    getSession().then((session) => {
       setUserId(session?.id || null);
-      setCommentCounts(counts);
       if (session) {
-        const [up, down] = await Promise.all([
-          getUpvotedPosts(session.id),
-          getDownvotedPosts(session.id),
-        ]);
-        setUpvoted(up);
-        setDownvoted(down);
+        Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
+          ([up, down]) => { setUpvoted(up); setDownvoted(down); }
+        );
       }
-    }
-    load();
+    });
+
+    // Phase 2: background — non-blocking secondary data
+    getVoteAdjustments().then((adj) => setVoteAdjustments(adj));
+    getDeletedPostIds().then((deleted) => setDeletedIds(deleted));
+    getUserCommunities().then((comms) => setUserCommunities(comms));
+    getAllCommentCounts().then((counts) => setCommentCounts(counts));
     fetch("/api/videos").then((r) => r.json()).then((d) => setFeaturedVideos(d.videos || [])).catch(() => {});
   }, []);
 
@@ -126,6 +123,9 @@ export default function Home() {
       });
     return [...r].sort((a, b) => b.votes - a.votes);
   }, [allPosts, activeCategory, search, sort]);
+
+  // Reset pagination when filters change
+  useEffect(() => { setVisibleCount(25); }, [activeCategory, search, sort]);
 
   const handleVote = async (postId: number, dir: "up" | "down") => {
     if (!userId) { router.push("/login?redirect=/"); return; }
@@ -201,13 +201,34 @@ export default function Home() {
             </div>
 
             {/* Count */}
-            <p className="text-slate-400 dark:text-[#2A2A40] text-xs mb-4 font-medium">
-              {filtered.length} {filtered.length === 1 ? "story" : "stories"} found
-            </p>
+            {!postsLoading && (
+              <p className="text-slate-400 dark:text-[#2A2A40] text-xs mb-4 font-medium">
+                {filtered.length} {filtered.length === 1 ? "story" : "stories"} found
+              </p>
+            )}
 
             {/* Posts */}
             <div className="space-y-3">
-              {filtered.length === 0 ? (
+              {postsLoading ? (
+                // Skeleton loader
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-xl p-4 animate-pulse">
+                    <div className="flex gap-3">
+                      <div className="flex flex-col items-center gap-1 pt-1">
+                        <div className="w-6 h-6 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                        <div className="w-6 h-3 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                        <div className="w-6 h-6 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 w-16 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                        <div className="h-5 w-3/4 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                        <div className="h-3 w-full rounded bg-slate-200 dark:bg-[#1C2035]" />
+                        <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-[#1C2035]" />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : filtered.length === 0 ? (
                 <div className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-xl p-16 text-center">
                   <div className="flex justify-center mb-4"><Search size={48} className="text-slate-300 dark:text-[#2A2A40]" /></div>
                   <p className="text-slate-700 dark:text-[#E2E8F0] font-semibold">No stories found</p>
@@ -217,9 +238,19 @@ export default function Home() {
                   </p>
                 </div>
               ) : (
-                filtered.map((post) => (
-                  <PostCard key={post.id} post={post} voteState={getVoteState(post.id)} onVote={handleVote} commentCount={commentCounts[post.id] ?? 0} />
-                ))
+                <>
+                  {filtered.slice(0, visibleCount).map((post) => (
+                    <PostCard key={post.id} post={post} voteState={getVoteState(post.id)} onVote={handleVote} commentCount={commentCounts[post.id] ?? 0} />
+                  ))}
+                  {visibleCount < filtered.length && (
+                    <button
+                      onClick={() => setVisibleCount((v) => v + 25)}
+                      className="w-full py-3 text-sm font-medium text-slate-500 dark:text-[#64748B] hover:text-[#E11D48] border border-slate-200 dark:border-[#1C2035] hover:border-[#E11D48]/40 rounded-xl bg-white dark:bg-[#0D1117] transition-colors"
+                    >
+                      Load more stories ({filtered.length - visibleCount} remaining)
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

@@ -19,14 +19,14 @@ export function bustCache(...keys: string[]) {
 // ── Posts ─────────────────────────────────────────────────────────────────────
 
 export async function getUserAddedPosts(): Promise<Post[]> {
-  const cached = getCache<Post[]>("posts", 30_000);
+  const cached = getCache<Post[]>("posts", 300_000); // 5 min
   if (cached) return cached;
 
   const { data } = await supabase
     .from("posts")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(100);
 
   const result = (data || []).map((p) => ({
     id: p.id,
@@ -63,7 +63,7 @@ export async function saveUserAddedPost(post: Post, userId: string): Promise<voi
 }
 
 export async function getDeletedPostIds(): Promise<number[]> {
-  const cached = getCache<number[]>("deleted", 60_000);
+  const cached = getCache<number[]>("deleted", 600_000); // 10 min
   if (cached) return cached;
   const { data } = await supabase.from("deleted_posts").select("post_id");
   const result = (data || []).map((r) => r.post_id);
@@ -85,7 +85,7 @@ export async function markPostRestored(postId: number): Promise<void> {
 // ── Votes ──────────────────────────────────────────────────────────────────────
 
 export async function getVoteAdjustments(): Promise<Record<number, number>> {
-  const cached = getCache<Record<number, number>>("votes", 15_000);
+  const cached = getCache<Record<number, number>>("votes", 120_000); // 2 min
   if (cached) return cached;
   const { data } = await supabase.from("vote_adjustments").select("post_id, adjustment").limit(500);
   if (!data) return {};
@@ -202,9 +202,9 @@ export async function getAllComments(): Promise<Comment[]> {
 // ── Communities ───────────────────────────────────────────────────────────────
 
 export async function getAllCommentCounts(): Promise<Record<number, number>> {
-  const cached = getCache<Record<number, number>>("comment_counts", 20_000);
+  const cached = getCache<Record<number, number>>("comment_counts", 300_000); // 5 min
   if (cached) return cached;
-  const { data } = await supabase.from("comments").select("post_id").limit(2000);
+  const { data } = await supabase.from("comments").select("post_id").limit(5000);
   const counts: Record<number, number> = {};
   (data || []).forEach((r) => { counts[r.post_id] = (counts[r.post_id] || 0) + 1; });
   setCache("comment_counts", counts);
@@ -212,7 +212,7 @@ export async function getAllCommentCounts(): Promise<Record<number, number>> {
 }
 
 export async function getUserCommunities(): Promise<Community[]> {
-  const cached = getCache<Community[]>("communities", 60_000);
+  const cached = getCache<Community[]>("communities", 600_000); // 10 min
   if (cached) return cached;
 
   const { data } = await supabase

@@ -209,7 +209,7 @@ export async function logout(): Promise<void> {
 // In-memory session cache — avoids repeated Supabase round-trips
 let _sessionCache: AuthUser | null = null;
 let _sessionCacheAt = 0;
-const SESSION_TTL = 60_000; // 1 minute
+const SESSION_TTL = 300_000; // 5 minutes
 
 /** Invalidate the cached session (call on login/logout). */
 export function clearSessionCache() {
