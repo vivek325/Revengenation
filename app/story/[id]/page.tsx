@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { posts as staticPosts } from "@/data/posts";
 import {
-  getUserAddedPosts,
+  getPostById,
   getVoteAdjustments,
   getUpvotedPosts,
   getDownvotedPosts,
@@ -52,16 +52,17 @@ export default function StoryPage() {
   useEffect(() => {
     async function init() {
       const id = Number(params.id);
-      const [userPosts, deletedIds, adj, session, fetchedComments] = await Promise.all([
-        getUserAddedPosts(),
+      // Check static posts first (instant, no network)
+      const staticFound = staticPosts.find((p) => p.id === id);
+
+      const [found, deletedIds, adj, session, fetchedComments] = await Promise.all([
+        staticFound ? Promise.resolve(staticFound) : getPostById(id),
         getDeletedPostIds(),
         getVoteAdjustments(),
         getSession(),
         getComments(id),
       ]);
-      const all = [...staticPosts, ...userPosts].filter((p) => !deletedIds.includes(p.id));
-      const found = all.find((p) => p.id === id);
-      if (!found) { router.push("/"); return; }
+      if (!found || deletedIds.includes(id)) { router.push("/"); return; }
 
       setPost(found);
       setVotes(found.votes + (adj[found.id] || 0));

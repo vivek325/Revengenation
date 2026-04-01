@@ -64,10 +64,20 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // Phase 1: critical — fetch posts + session first, render immediately
+    // Show localStorage cache INSTANTLY (0ms wait) on repeat visits
+    try {
+      const local = localStorage.getItem("rn_posts_v2");
+      if (local) {
+        setUserPosts(JSON.parse(local));
+        setPostsLoading(false);
+      }
+    } catch {}
+
+    // Phase 1: fetch fresh posts, update UI + persist to localStorage
     getUserAddedPosts().then((posts) => {
       setUserPosts(posts);
       setPostsLoading(false);
+      try { localStorage.setItem("rn_posts_v2", JSON.stringify(posts)); } catch {}
     });
 
     getSession().then((session) => {

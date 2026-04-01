@@ -22,9 +22,10 @@ export async function getUserAddedPosts(): Promise<Post[]> {
   const cached = getCache<Post[]>("posts", 300_000); // 5 min
   if (cached) return cached;
 
+  // Only fetch columns needed for the feed — NOT full_story (saves 50-90% bandwidth)
   const { data } = await supabase
     .from("posts")
-    .select("*")
+    .select("id, title, content, author, category, type, votes, image_url, created_at")
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -32,7 +33,7 @@ export async function getUserAddedPosts(): Promise<Post[]> {
     id: p.id,
     title: p.title,
     content: p.content,
-    fullStory: p.full_story,
+    fullStory: "",           // not needed for feed, lazy-loaded on story page
     votes: p.votes,
     author: p.author,
     category: p.category,
@@ -41,6 +42,35 @@ export async function getUserAddedPosts(): Promise<Post[]> {
     createdAt: p.created_at,
   }));
   setCache("posts", result);
+  return result;
+}
+
+// Fetch a single post WITH full_story — used only on the story detail page
+export async function getPostById(id: number): Promise<Post | null> {
+  const cacheKey = `post:${id}`;
+  const cached = getCache<Post>(cacheKey, 300_000);
+  if (cached) return cached;
+
+  const { data } = await supabase
+    .from("posts")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!data) return null;
+  const result: Post = {
+    id: data.id,
+    title: data.title,
+    content: data.content,
+    fullStory: data.full_story,
+    votes: data.votes,
+    author: data.author,
+    category: data.category,
+    type: data.type as "post" | "story",
+    imageUrl: data.image_url ?? undefined,
+    createdAt: data.created_at,
+  };
+  setCache(cacheKey, result);
   return result;
 }
 
