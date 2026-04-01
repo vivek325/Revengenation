@@ -103,8 +103,19 @@ export async function getDeletedPostIds(): Promise<number[]> {
 
 export async function markPostDeleted(postId: number): Promise<void> {
   bustCache("posts", "deleted", "comment_counts");
+  try { localStorage.removeItem("rn_posts_v2"); } catch {}
   await supabase.from("deleted_posts").upsert({ post_id: postId }, { onConflict: "post_id" });
   await supabase.from("posts").delete().eq("id", postId);
+}
+
+export async function updatePost(postId: number, fields: { title: string; content: string; full_story: string }): Promise<void> {
+  bustCache("posts", `post:${postId}`);
+  try { localStorage.removeItem("rn_posts_v2"); } catch {}
+  await supabase.from("posts").update({
+    title: fields.title,
+    content: fields.content,
+    full_story: fields.full_story,
+  }).eq("id", postId);
 }
 
 export async function markPostRestored(postId: number): Promise<void> {

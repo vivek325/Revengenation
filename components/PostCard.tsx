@@ -5,9 +5,10 @@ import Link from "next/link";
 import {
   ArrowUpCircle, ArrowDownCircle, MessageCircle, Share2,
   CheckCircle2, ArrowRight, Flame, Newspaper, MessageSquareText,
+  Pencil, Trash2, X,
 } from "lucide-react";
 import type { Post } from "@/types";
-import { getComments } from "@/lib/storage";
+import { getComments, updatePost, markPostDeleted } from "@/lib/storage";
 
 const FLAIR_COLORS: Record<string, string> = {
   "Red Flag Guide": "#EF4444",
@@ -19,7 +20,15 @@ const FLAIR_COLORS: Record<string, string> = {
 };
 
 export type VoteState = "up" | "down" | null;
-interface PostCardProps { post: Post; voteState: VoteState; onVote: (id: number, dir: "up" | "down") => void; commentCount?: number; }
+interface PostCardProps {
+  post: Post;
+  voteState: VoteState;
+  onVote: (id: number, dir: "up" | "down") => void;
+  commentCount?: number;
+  currentUsername?: string | null;
+  onDelete?: (id: number) => void;
+  onEdit?: (post: Post) => void;
+}
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -30,10 +39,36 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(d / 30)}mo ago`;
 }
 
-export default memo(function PostCard({ post, voteState, onVote, commentCount: countProp }: PostCardProps) {
+export default memo(function PostCard({ post, voteState, onVote, commentCount: countProp, currentUsername, onDelete, onEdit }: PostCardProps) {
   const flairColor = FLAIR_COLORS[post.category] ?? "#64748B";
   const [commentCount, setCommentCount] = useState(countProp ?? 0);
   const [copied, setCopied] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState(post.title);
+  const [editContent, setEditContent] = useState(post.content);
+  const [editFullStory, setEditFullStory] = useState(post.fullStory ?? "");
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const isOwner = !!(currentUsername && post.author === currentUsername);
+
+  async function handleSaveEdit() {
+    if (!editTitle.trim()) return;
+    setEditSaving(true);
+    await updatePost(post.id, { title: editTitle.trim(), content: editContent.trim(), full_story: editFullStory.trim() });
+    setEditSaving(false);
+    setEditOpen(false);
+    onEdit?.({ ...post, title: editTitle.trim(), content: editContent.trim(), fullStory: editFullStory.trim() });
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    await markPostDeleted(post.id);
+    setDeleting(false);
+    setDeleteConfirm(false);
+    onDelete?.(post.id);
+  }
 
   useEffect(() => {
     if (countProp !== undefined) { setCommentCount(countProp); return; }
@@ -158,12 +193,96 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
             </button>
           </div>
 
+          {isOwner && (
+            <div className="flex items-center gap-1 ml-auto">
+              <button
+                onClick={(e) => { e.preventDefault(); setEditTitle(post.title); setEditContent(post.content); setEditFullStory(post.fullStory ?? ""); setEditOpen(true); }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 dark:text-[#64748B] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+              <button
+                onClick={(e) => { e.preventDefault(); setDeleteConfirm(true); }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 dark:text-[#64748B] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={12} /> Delete
+              </button>
+            </div>
+          )}
+
           <Link href={`/story/${post.id}`} className="flex items-center gap-1 text-sm font-bold text-[#E11D48] hover:text-rose-700 dark:hover:text-rose-400 transition-colors">
             {post.type === "post" ? "View Post" : "Read Story"}
             <ArrowRight size={15} />
           </Link>
         </div>
       </div>
+
+      {/* ── Delete Confirm Modal ── */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDeleteConfirm(false)}>
+          <div className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-slate-800 dark:text-[#E2E8F0] font-bold text-lg mb-2">Delete Post?</h3>
+            <p className="text-slate-500 dark:text-[#475569] text-sm mb-5">This action cannot be undone. The post will be permanently deleted.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-[#1C2035] text-slate-600 dark:text-[#94A3B8] text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#161B2A] transition-colors">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !editSaving && setEditOpen(false)}>
+          <div className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-2xl p-6 w-full max-w-2xl mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-slate-800 dark:text-[#E2E8F0] font-bold text-lg">Edit Post</h3>
+              <button onClick={() => !editSaving && setEditOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Title</label>
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                  placeholder="Post title"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Summary</label>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                  placeholder="Short summary"
+                />
+              </div>
+              {post.type !== "post" && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Full Story</label>
+                  <textarea
+                    value={editFullStory}
+                    onChange={(e) => setEditFullStory(e.target.value)}
+                    rows={8}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                    placeholder="Full story content"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => !editSaving && setEditOpen(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] text-slate-600 dark:text-[#94A3B8] text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#161B2A] transition-colors">Cancel</button>
+              <button onClick={handleSaveEdit} disabled={editSaving || !editTitle.trim()} className="flex-1 py-2.5 rounded-xl bg-[#E11D48] hover:bg-rose-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 });

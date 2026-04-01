@@ -14,6 +14,8 @@ import {
   getComments,
   addComment,
   deleteComment,
+  updatePost,
+  markPostDeleted,
 } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
 import RNLoader from "@/components/RNLoader";
@@ -47,6 +49,13 @@ export default function StoryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [editFullStory, setEditFullStory] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -150,6 +159,24 @@ export default function StoryPage() {
     navigator.clipboard?.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!post || !editTitle.trim()) return;
+    setEditSaving(true);
+    await updatePost(post.id, { title: editTitle.trim(), content: editContent.trim(), full_story: editFullStory.trim() });
+    setPost((p) => p ? { ...p, title: editTitle.trim(), content: editContent.trim(), fullStory: editFullStory.trim() } : p);
+    setEditSaving(false);
+    setEditOpen(false);
+  };
+
+  const handleDeletePost = async () => {
+    if (!post) return;
+    setDeleting(true);
+    await markPostDeleted(post.id);
+    setDeleting(false);
+    setDeleteConfirm(false);
+    router.push("/");
   };
 
   if (loading) {
@@ -299,9 +326,93 @@ export default function StoryPage() {
               >
                 ← Back
               </Link>
+
+              {currentUser && post.author === currentUser && (
+                <>
+                  <button
+                    onClick={() => { setEditTitle(post.title); setEditContent(post.content); setEditFullStory(post.fullStory ?? ""); setEditOpen(true); }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[#64748B] hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    🗑️ Delete
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
+
+        {/* ── Delete Confirm Modal ── */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDeleteConfirm(false)}>
+            <div className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-slate-800 dark:text-[#E2E8F0] font-bold text-lg mb-2">Delete Post?</h3>
+              <p className="text-slate-500 dark:text-[#475569] text-sm mb-5">This action cannot be undone. The post will be permanently deleted.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-[#1C2035] text-slate-600 dark:text-[#94A3B8] text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#161B2A] transition-colors">Cancel</button>
+                <button onClick={handleDeletePost} disabled={deleting} className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Edit Modal ── */}
+        {editOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !editSaving && setEditOpen(false)}>
+            <div className="bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-2xl p-6 w-full max-w-2xl mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-slate-800 dark:text-[#E2E8F0] font-bold text-lg">Edit Post</h3>
+                <button onClick={() => !editSaving && setEditOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕</button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Title</label>
+                  <input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                    placeholder="Post title"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Summary</label>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={3}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                    placeholder="Short summary"
+                  />
+                </div>
+                {post && post.type !== "post" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Full Story</label>
+                    <textarea
+                      value={editFullStory}
+                      onChange={(e) => setEditFullStory(e.target.value)}
+                      rows={10}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] bg-slate-50 dark:bg-[#161B2A] text-slate-800 dark:text-[#E2E8F0] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#E11D48]/40"
+                      placeholder="Full story content"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => !editSaving && setEditOpen(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-[#1C2035] text-slate-600 dark:text-[#94A3B8] text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#161B2A] transition-colors">Cancel</button>
+                <button onClick={handleSaveEdit} disabled={editSaving || !editTitle.trim()} className="flex-1 py-2.5 rounded-xl bg-[#E11D48] hover:bg-rose-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                  {editSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Comments section */}
         <div id="comments" className="mt-4 space-y-4">

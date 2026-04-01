@@ -13,6 +13,8 @@ import {
   getDeletedPostIds,
   getUserCommunities,
   getAllCommentCounts,
+  markPostDeleted,
+  updatePost,
 } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
 import type { Post, Community } from "@/types";
@@ -54,6 +56,7 @@ export default function Home() {
   const [deletedIds, setDeletedIds] = useState<number[]>([]);
   const [userCommunities, setUserCommunities] = useState<Community[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [commentCounts, setCommentCounts] = useState<Record<number, number>>({});
   const [catExpanded, setCatExpanded] = useState(true);
   const [featuredVideos, setFeaturedVideos] = useState<FeaturedVideo[]>([]);
@@ -82,6 +85,7 @@ export default function Home() {
 
     getSession().then((session) => {
       setUserId(session?.id || null);
+      setUsername(session?.username || null);
       if (session) {
         Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
           ([up, down]) => { setUpvoted(up); setDownvoted(down); }
@@ -163,6 +167,24 @@ export default function Home() {
 
   const getVoteState = (id: number): "up" | "down" | null =>
     upvoted.has(id) ? "up" : downvoted.has(id) ? "down" : null;
+
+  const handleDeletePost = async (postId: number) => {
+    await markPostDeleted(postId);
+    setUserPosts((prev) => prev.filter((p) => p.id !== postId));
+    setDeletedIds((prev) => [...prev, postId]);
+    try { localStorage.removeItem("rn_posts_v2"); } catch {}
+  };
+
+  const handleEditPost = (updated: Post) => {
+    setUserPosts((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+    try {
+      const cached = localStorage.getItem("rn_posts_v2");
+      if (cached) {
+        const arr: Post[] = JSON.parse(cached);
+        localStorage.setItem("rn_posts_v2", JSON.stringify(arr.map((p) => p.id === updated.id ? updated : p)));
+      }
+    } catch {}
+  };
 
   const builtinWithCounts = BUILTIN_CATEGORIES.map((c) => ({
     ...c,
@@ -250,7 +272,7 @@ export default function Home() {
               ) : (
                 <>
                   {filtered.slice(0, visibleCount).map((post) => (
-                    <PostCard key={post.id} post={post} voteState={getVoteState(post.id)} onVote={handleVote} commentCount={commentCounts[post.id] ?? 0} />
+                    <PostCard key={post.id} post={post} voteState={getVoteState(post.id)} onVote={handleVote} commentCount={commentCounts[post.id] ?? 0} currentUsername={username} onDelete={handleDeletePost} onEdit={handleEditPost} />
                   ))}
                   {visibleCount < filtered.length && (
                     <button
