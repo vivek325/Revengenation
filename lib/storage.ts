@@ -36,7 +36,7 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
     await Promise.all([
       supabase
         .from("posts")
-        .select("id, title, content, author, category, type, votes, image_url, created_at")
+        .select("id, title, content, full_story, author, category, type, votes, image_url, created_at")
         .order("created_at", { ascending: false })
         .limit(100),
       supabase.from("vote_adjustments").select("post_id, adjustment").limit(500),
@@ -53,18 +53,23 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
     commentCounts[r.post_id] = (commentCounts[r.post_id] || 0) + 1;
   });
 
-  const posts = (postsRes.data || []).map((p) => ({
-    id: p.id,
-    title: p.title,
-    content: p.content,
-    fullStory: "",
-    votes: p.votes,
-    author: p.author,
-    category: p.category,
-    type: p.type as "post" | "story",
-    imageUrl: p.image_url ?? undefined,
-    createdAt: p.created_at,
-  }));
+  const posts = (postsRes.data || []).map((p) => {
+    const excerpt = p.content?.trim()
+      || p.full_story?.split("\n").find((l: string) => l.trim().length > 20)?.trim().substring(0, 200)
+      || "";
+    return {
+      id: p.id,
+      title: p.title,
+      content: excerpt,
+      fullStory: "",
+      votes: p.votes,
+      author: p.author,
+      category: p.category,
+      type: p.type as "post" | "story",
+      imageUrl: p.image_url ?? undefined,
+      createdAt: p.created_at,
+    };
+  });
 
   const communities = (communitiesRes.data || []).map((c) => ({
     id: c.id,
