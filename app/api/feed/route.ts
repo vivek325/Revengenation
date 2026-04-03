@@ -8,7 +8,7 @@ const supabase = createClient(
 );
 
 const CACHE_KEY = "feed:v1";
-const CACHE_TTL = 120; // 2 minutes
+const CACHE_TTL = 60; // 1 minute — so new posts appear quickly
 
 export async function GET() {
   const redis = getRedis();
@@ -97,6 +97,15 @@ export async function GET() {
   }
 
   return NextResponse.json(payload, {
-    headers: { "X-Cache": "MISS", "Cache-Control": "public, max-age=60" },
+    headers: { "X-Cache": "MISS", "Cache-Control": "public, max-age=30" },
   });
+}
+
+// Call this after creating/deleting a post to bust the Redis cache
+export async function DELETE() {
+  const redis = getRedis();
+  if (redis) {
+    try { await redis.del(CACHE_KEY); } catch {}
+  }
+  return NextResponse.json({ ok: true });
 }

@@ -108,13 +108,14 @@ export default function Home() {
   );
 
   // Main feed: only built-in category posts (exclude user community posts)
+  // Only filter once communities are actually loaded to avoid false-hiding posts
   const allPosts = useMemo(
     () =>
       [...userPosts]
         .filter((p) => !deletedIds.includes(p.id))
-        .filter((p) => !userCommunityNames.has(p.category))
+        .filter((p) => userCommunities.length === 0 || BUILTIN_NAMES.has(p.category) || !userCommunityNames.has(p.category))
         .map((p) => ({ ...p, votes: p.votes + (voteAdjustments[p.id] || 0) })),
-    [userPosts, voteAdjustments, deletedIds, userCommunityNames]
+    [userPosts, voteAdjustments, deletedIds, userCommunityNames, userCommunities.length]
   );
 
   const filtered = useMemo(() => {
