@@ -93,7 +93,7 @@ export default function ProfilePage() {
     setEditing(false);
   };
 
-  if (!authChecked) return <RNLoader />;
+  if (!authChecked) return null;
 
   const upvotedPosts = allPosts.filter((p) => upvotedIds.has(p.id));
 

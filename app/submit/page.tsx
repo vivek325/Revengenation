@@ -101,7 +101,7 @@ function SubmitPageInner() {
 
   const isInCommunity = allCommunityNames.has(category);
 
-  if (!authChecked) return <RNLoader />;
+  if (!authChecked) return null;
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -531,7 +531,7 @@ function SubmitPageInner() {
                   </button>
                   <button
                     type="submit"
-                    disabled={loading || !form.title}
+                    disabled={loading || !form.title || !authChecked}
                     className={`px-6 py-2 disabled:opacity-50 text-white rounded-lg text-sm font-bold transition-colors ${
                       mode === "story"
                         ? "bg-[#7C3AED] hover:bg-[#6D28D9]"

@@ -181,8 +181,12 @@ export default function StoryPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[#E11D48] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen">
+        <div className="max-w-3xl mx-auto px-4 py-6 animate-pulse">
+          <div className="h-4 w-40 bg-slate-200 dark:bg-[#1E1E2E] rounded mb-4" />
+          <div className="h-64 bg-slate-200 dark:bg-[#0F0F18] rounded-xl mb-4" />
+          <div className="h-32 bg-slate-200 dark:bg-[#0F0F18] rounded-xl" />
+        </div>
       </div>
     );
   }

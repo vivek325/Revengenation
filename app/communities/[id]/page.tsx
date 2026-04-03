@@ -166,7 +166,17 @@ export default function CommunityPage() {
   const getVoteState = (pid: number): "up" | "down" | null =>
     upvoted.has(pid) ? "up" : downvoted.has(pid) ? "down" : null;
 
-  if (loading) return <RNLoader />;
+  if (loading) return (
+    <div className="min-h-screen">
+      <div className="max-w-3xl mx-auto px-4 py-6 animate-pulse">
+        <div className="h-4 w-48 bg-slate-200 dark:bg-[#1E1E2E] rounded mb-6" />
+        <div className="h-32 bg-slate-200 dark:bg-[#0F0F18] rounded-2xl mb-4" />
+        <div className="space-y-3">
+          {[1,2,3].map(i => <div key={i} className="h-24 bg-slate-200 dark:bg-[#0F0F18] rounded-xl" />)}
+        </div>
+      </div>
+    </div>
+  );
 
   if (!community) {
     return (
