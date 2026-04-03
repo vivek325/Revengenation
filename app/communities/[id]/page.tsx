@@ -57,26 +57,26 @@ export default function CommunityPage() {
     async function load() {
       setLoading(true);
 
-      // Try built-in first, then DB
-      let comm: Community | null = BUILTIN.find((c) => c.id === id) || null;
-      if (!comm) {
-        const userComms = await getUserCommunities();
-        comm = userComms.find((c) => c.id === id) || null;
-      }
-      if (!comm) { setLoading(false); return; }
-      setCommunity(comm);
-
-      const [session, adj, counts] = await Promise.all([
+      // Start session + feed data in parallel while we resolve community
+      const [sessionRes, adjRes, countsRes, userCommsRes] = await Promise.all([
         getSession(),
         getVoteAdjustments(),
         getAllCommentCounts(),
+        getUserCommunities(),
       ]);
-      setVoteAdjustments(adj);
-      setUserId(session?.id || null);
-      setUsername(session?.username || null);
-      setCommentCounts(counts);
 
-      // Fetch posts, member count
+      // Try built-in first, then DB
+      let comm: Community | null = BUILTIN.find((c) => c.id === id) || null;
+      if (!comm) comm = userCommsRes.find((c) => c.id === id) || null;
+      if (!comm) { setLoading(false); return; }
+      setCommunity(comm);
+
+      setVoteAdjustments(adjRes);
+      setUserId(sessionRes?.id || null);
+      setUsername(sessionRes?.username || null);
+      setCommentCounts(countsRes);
+
+      // Fetch posts + member count in parallel
       const [communityPosts, count] = await Promise.all([
         getCommunityPosts(comm.name),
         getMemberCount(comm.id),
@@ -84,11 +84,11 @@ export default function CommunityPage() {
       setPosts(communityPosts);
       setMemberCount(count);
 
-      if (session?.id) {
+      if (sessionRes?.id) {
         const [memberStatus, up, down] = await Promise.all([
-          isMember(comm.id, session.id),
-          getUpvotedPosts(session.id),
-          getDownvotedPosts(session.id),
+          isMember(comm.id, sessionRes.id),
+          getUpvotedPosts(sessionRes.id),
+          getDownvotedPosts(sessionRes.id),
         ]);
         setJoined(memberStatus);
         setUpvoted(up);

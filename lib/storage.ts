@@ -347,11 +347,16 @@ export async function isMember(communityId: string, userId: string): Promise<boo
 }
 
 export async function getMemberCount(communityId: string): Promise<number> {
+  const cacheKey = `membercount:${communityId}`;
+  const cached = getCache<number>(cacheKey, 120_000); // 2 min
+  if (cached !== null) return cached;
   const { count } = await supabase
     .from("community_members")
     .select("*", { count: "exact", head: true })
     .eq("community_id", communityId);
-  return count ?? 0;
+  const result = count ?? 0;
+  setCache(cacheKey, result);
+  return result;
 }
 
 export async function getCommunityById(id: string): Promise<Community | null> {
@@ -373,16 +378,19 @@ export async function getCommunityById(id: string): Promise<Community | null> {
 }
 
 export async function getCommunityPosts(communityName: string): Promise<import("@/types").Post[]> {
+  const cacheKey = `communityposts:${communityName}`;
+  const cached = getCache<import("@/types").Post[]>(cacheKey, 120_000); // 2 min
+  if (cached) return cached;
   const { data } = await supabase
     .from("posts")
-    .select("*")
+    .select("id, title, content, author, category, type, votes, image_url, created_at")
     .eq("category", communityName)
     .order("created_at", { ascending: false });
-  return (data || []).map((p) => ({
+  const result = (data || []).map((p) => ({
     id: p.id,
     title: p.title,
     content: p.content,
-    fullStory: p.full_story || "",
+    fullStory: "",
     votes: p.votes,
     author: p.author,
     category: p.category,
@@ -390,6 +398,8 @@ export async function getCommunityPosts(communityName: string): Promise<import("
     type: p.type,
     imageUrl: p.image_url,
   }));
+  setCache(cacheKey, result);
+  return result;
 }
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
