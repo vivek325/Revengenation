@@ -45,8 +45,6 @@ export default function NewCommunityPage() {
     check();
   }, [router]);
 
-  if (!authChecked) return <RNLoader />;
-
   const handleBanner = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -259,7 +257,7 @@ export default function NewCommunityPage() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={loading || !name.trim()}
+                  disabled={loading || !name.trim() || !authChecked}
                   className="flex items-center gap-2 px-6 py-2.5 bg-[#E11D48] hover:bg-[#BE1239] disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors"
                 >
                   {loading ? (
