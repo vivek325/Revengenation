@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import type { Post, Comment, Community } from "@/types";
 
-// ── In-memory TTL cache ───────────────────────────────────────────────────────
+// ── In-memory browser cache (per-session fallback) ──────────────────────────
 const _cache = new Map<string, { value: unknown; at: number }>();
 
 function getCache<T>(key: string, ttl: number): T | null {
@@ -14,26 +14,50 @@ function setCache(key: string, value: unknown) {
 }
 export function bustCache(...keys: string[]) {
   keys.forEach((k) => _cache.delete(k));
+  // Also clear the shared feed cache when any feed-related key is invalidated
+  const feedKeys = new Set(["posts", "votes", "comment_counts", "communities", "deleted"]);
+  if (keys.some((k) => feedKeys.has(k))) _feedCache = null;
 }
 
-// ── Posts ─────────────────────────────────────────────────────────────────────
+// ── Server-backed feed cache (Redis via /api/feed) ────────────────────────────
+interface FeedData {
+  posts: Post[];
+  votes: Record<number, number>;
+  commentCounts: Record<number, number>;
+  communities: Community[];
+  deletedPostIds: number[];
+}
 
-export async function getUserAddedPosts(): Promise<Post[]> {
-  const cached = getCache<Post[]>("posts", 300_000); // 5 min
-  if (cached) return cached;
+let _feedCache: { data: FeedData; at: number } | null = null;
+const FEED_BROWSER_TTL = 120_000; // 2 min — matches server Redis TTL
 
-  // Only fetch columns needed for the feed — NOT full_story (saves 50-90% bandwidth)
-  const { data } = await supabase
-    .from("posts")
-    .select("id, title, content, author, category, type, votes, image_url, created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
+async function fetchFeedFromSupabase(): Promise<FeedData> {
+  const [postsRes, votesRes, commentsRes, communitiesRes, deletedRes] =
+    await Promise.all([
+      supabase
+        .from("posts")
+        .select("id, title, content, author, category, type, votes, image_url, created_at")
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase.from("vote_adjustments").select("post_id, adjustment").limit(500),
+      supabase.from("comments").select("post_id").limit(5000),
+      supabase.from("communities").select("*").order("created_at", { ascending: false }),
+      supabase.from("deleted_posts").select("post_id"),
+    ]);
 
-  const result = (data || []).map((p) => ({
+  const votes: Record<number, number> = {};
+  (votesRes.data || []).forEach((r) => { votes[r.post_id] = r.adjustment; });
+
+  const commentCounts: Record<number, number> = {};
+  (commentsRes.data || []).forEach((r) => {
+    commentCounts[r.post_id] = (commentCounts[r.post_id] || 0) + 1;
+  });
+
+  const posts = (postsRes.data || []).map((p) => ({
     id: p.id,
     title: p.title,
     content: p.content,
-    fullStory: "",           // not needed for feed, lazy-loaded on story page
+    fullStory: "",
     votes: p.votes,
     author: p.author,
     category: p.category,
@@ -41,8 +65,49 @@ export async function getUserAddedPosts(): Promise<Post[]> {
     imageUrl: p.image_url ?? undefined,
     createdAt: p.created_at,
   }));
-  setCache("posts", result);
-  return result;
+
+  const communities = (communitiesRes.data || []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    emoji: c.emoji,
+    color: c.color,
+    createdBy: c.created_by,
+    createdAt: c.created_at,
+    bannerUrl: c.banner_url || undefined,
+  }));
+
+  return {
+    posts,
+    votes,
+    commentCounts,
+    communities,
+    deletedPostIds: (deletedRes.data || []).map((r) => r.post_id),
+  };
+}
+
+async function fetchFeed(): Promise<FeedData> {
+  if (_feedCache && Date.now() - _feedCache.at < FEED_BROWSER_TTL) {
+    return _feedCache.data;
+  }
+  try {
+    const res = await fetch("/api/feed");
+    if (!res.ok) throw new Error(`feed ${res.status}`);
+    const data: FeedData = await res.json();
+    _feedCache = { data, at: Date.now() };
+    return data;
+  } catch {
+    // API route unavailable or errored — fall back to direct Supabase
+    const data = await fetchFeedFromSupabase();
+    _feedCache = { data, at: Date.now() };
+    return data;
+  }
+}
+
+// ── Posts ─────────────────────────────────────────────────────────────────────
+
+export async function getUserAddedPosts(): Promise<Post[]> {
+  return (await fetchFeed()).posts;
 }
 
 // Fetch a single post WITH full_story — used only on the story detail page
@@ -51,27 +116,25 @@ export async function getPostById(id: number): Promise<Post | null> {
   const cached = getCache<Post>(cacheKey, 300_000);
   if (cached) return cached;
 
-  const { data } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (!data) return null;
-  const result: Post = {
-    id: data.id,
-    title: data.title,
-    content: data.content,
-    fullStory: data.full_story,
-    votes: data.votes,
-    author: data.author,
-    category: data.category,
-    type: data.type as "post" | "story",
-    imageUrl: data.image_url ?? undefined,
-    createdAt: data.created_at,
-  };
-  setCache(cacheKey, result);
-  return result;
+  try {
+    const res = await fetch(`/api/post/${id}`);
+    if (!res.ok) throw new Error(`post ${res.status}`);
+    const { post } = await res.json();
+    if (post) setCache(cacheKey, post);
+    return post ?? null;
+  } catch {
+    // Fallback to direct Supabase
+    const { data } = await supabase.from("posts").select("*").eq("id", id).maybeSingle();
+    if (!data) return null;
+    const post: Post = {
+      id: data.id, title: data.title, content: data.content,
+      fullStory: data.full_story, votes: data.votes, author: data.author,
+      category: data.category, type: data.type as "post" | "story",
+      imageUrl: data.image_url ?? undefined, createdAt: data.created_at,
+    };
+    setCache(cacheKey, post);
+    return post;
+  }
 }
 
 export async function saveUserAddedPost(post: Post, userId: string): Promise<void> {
@@ -93,12 +156,7 @@ export async function saveUserAddedPost(post: Post, userId: string): Promise<voi
 }
 
 export async function getDeletedPostIds(): Promise<number[]> {
-  const cached = getCache<number[]>("deleted", 600_000); // 10 min
-  if (cached) return cached;
-  const { data } = await supabase.from("deleted_posts").select("post_id");
-  const result = (data || []).map((r) => r.post_id);
-  setCache("deleted", result);
-  return result;
+  return (await fetchFeed()).deletedPostIds;
 }
 
 export async function markPostDeleted(postId: number): Promise<void> {
@@ -126,14 +184,7 @@ export async function markPostRestored(postId: number): Promise<void> {
 // ── Votes ──────────────────────────────────────────────────────────────────────
 
 export async function getVoteAdjustments(): Promise<Record<number, number>> {
-  const cached = getCache<Record<number, number>>("votes", 120_000); // 2 min
-  if (cached) return cached;
-  const { data } = await supabase.from("vote_adjustments").select("post_id, adjustment").limit(500);
-  if (!data) return {};
-  const result: Record<number, number> = {};
-  data.forEach((r) => { result[r.post_id] = r.adjustment; });
-  setCache("votes", result);
-  return result;
+  return (await fetchFeed()).votes;
 }
 
 export async function getUpvotedPosts(userId: string): Promise<Set<number>> {
@@ -243,36 +294,11 @@ export async function getAllComments(): Promise<Comment[]> {
 // ── Communities ───────────────────────────────────────────────────────────────
 
 export async function getAllCommentCounts(): Promise<Record<number, number>> {
-  const cached = getCache<Record<number, number>>("comment_counts", 300_000); // 5 min
-  if (cached) return cached;
-  const { data } = await supabase.from("comments").select("post_id").limit(5000);
-  const counts: Record<number, number> = {};
-  (data || []).forEach((r) => { counts[r.post_id] = (counts[r.post_id] || 0) + 1; });
-  setCache("comment_counts", counts);
-  return counts;
+  return (await fetchFeed()).commentCounts;
 }
 
 export async function getUserCommunities(): Promise<Community[]> {
-  const cached = getCache<Community[]>("communities", 600_000); // 10 min
-  if (cached) return cached;
-
-  const { data } = await supabase
-    .from("communities")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const result = (data || []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    description: c.description,
-    emoji: c.emoji,
-    color: c.color,
-    createdBy: c.created_by,
-    createdAt: c.created_at,
-    bannerUrl: c.banner_url || undefined,
-  }));
-  setCache("communities", result);
-  return result;
+  return (await fetchFeed()).communities;
 }
 
 export async function addCommunity(community: Community, userId: string): Promise<void> {
