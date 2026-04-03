@@ -69,7 +69,7 @@ export default function Home() {
   useEffect(() => {
     // Show localStorage cache INSTANTLY (0ms wait) on repeat visits
     try {
-      const local = localStorage.getItem("rn_posts_v2");
+      const local = localStorage.getItem("rn_posts_v3");
       if (local) {
         setUserPosts(JSON.parse(local));
         setPostsLoading(false);
@@ -80,7 +80,8 @@ export default function Home() {
     getUserAddedPosts().then((posts) => {
       setUserPosts(posts);
       setPostsLoading(false);
-      try { localStorage.setItem("rn_posts_v2", JSON.stringify(posts)); } catch {}
+      try { localStorage.setItem("rn_posts_v3", JSON.stringify(posts)); } catch {}
+      try { localStorage.removeItem("rn_posts_v2"); } catch {}
     });
 
     getSession().then((session) => {
@@ -173,7 +174,7 @@ export default function Home() {
     await markPostDeleted(postId);
     setUserPosts((prev) => prev.filter((p) => p.id !== postId));
     setDeletedIds((prev) => [...prev, postId]);
-    try { localStorage.removeItem("rn_posts_v2"); } catch {}
+    try { localStorage.removeItem("rn_posts_v3"); } catch {}
   };
 
   const handleEditPost = (updated: Post) => {
