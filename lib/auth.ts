@@ -210,21 +210,49 @@ export async function logout(): Promise<void> {
 let _sessionCache: AuthUser | null = null;
 let _sessionCacheAt = 0;
 const SESSION_TTL = 300_000; // 5 minutes
+const LS_KEY = "rn_session_v1";
+
+/** Persist session to localStorage for instant load across page navigations */
+function saveSessionToStorage(user: AuthUser) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ user, at: Date.now() }));
+  } catch {}
+}
+
+/** Read session from localStorage if fresh */
+function readSessionFromStorage(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const { user, at } = JSON.parse(raw);
+    if (Date.now() - at < SESSION_TTL) return user as AuthUser;
+  } catch {}
+  return null;
+}
 
 /** Invalidate the cached session (call on login/logout). */
 export function clearSessionCache() {
   _sessionCache = null;
   _sessionCacheAt = 0;
+  try { localStorage.removeItem(LS_KEY); } catch {}
 }
 
 /** Get the current logged-in user with profile. Returns null if not logged in. */
 export async function getSession(): Promise<AuthUser | null> {
-  // Return cached value if fresh
+  // 1. In-memory cache (fastest)
   if (_sessionCache && Date.now() - _sessionCacheAt < SESSION_TTL) {
     return _sessionCache;
   }
 
-  // getSession() reads from local storage — no network call for the auth part
+  // 2. localStorage cache (fast, survives page reload)
+  const stored = readSessionFromStorage();
+  if (stored) {
+    _sessionCache = stored;
+    _sessionCacheAt = Date.now();
+    return stored;
+  }
+
+  // 3. Supabase auth (reads localStorage token — no network)
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     _sessionCache = null;
@@ -232,6 +260,7 @@ export async function getSession(): Promise<AuthUser | null> {
   }
   const user = session.user;
 
+  // 4. Only DB call: fetch profile (only on first visit or after cache expires)
   const { data: profile } = await supabase
     .from("profiles")
     .select("username, is_admin")
@@ -250,6 +279,7 @@ export async function getSession(): Promise<AuthUser | null> {
     isAdmin: profile.is_admin || false,
   };
   _sessionCacheAt = Date.now();
+  saveSessionToStorage(_sessionCache);
   return _sessionCache;
 }
 

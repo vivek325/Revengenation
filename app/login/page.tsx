@@ -95,8 +95,7 @@ function LoginContent() {
     setLoading(true);
     const err = await login(loginEmail, loginPassword);
     if (err) { setError(err); setLoading(false); return; }
-    router.push(redirectTo);
-    router.refresh();
+    window.location.href = redirectTo;
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
@@ -117,8 +116,7 @@ function LoginContent() {
     setLoading(true);
     const err = await verifyOtp(loginEmail, otpCode);
     if (err) { setError(err); setLoading(false); return; }
-    router.push(redirectTo);
-    router.refresh();
+    window.location.href = redirectTo;
   };
 
   const handleStep1 = async (e: React.FormEvent) => {
@@ -149,8 +147,7 @@ function LoginContent() {
     setLoading(true);
     const err = await completeSignup(email, username, password, avatarUrl || undefined, selectedEmoji || undefined);
     if (err) { setError(err); setLoading(false); return; }
-    router.push(redirectTo);
-    router.refresh();
+    window.location.href = redirectTo;
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
