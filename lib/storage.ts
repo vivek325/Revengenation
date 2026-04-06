@@ -29,7 +29,8 @@ interface FeedData {
 }
 
 let _feedCache: { data: FeedData; at: number } | null = null;
-const FEED_BROWSER_TTL = 120_000; // 2 min — matches server Redis TTL
+let _feedInFlight: Promise<FeedData> | null = null;
+const FEED_BROWSER_TTL = 300_000; // 5 min — matches server Redis TTL
 
 async function fetchFeedFromSupabase(): Promise<FeedData> {
   const [postsRes, votesRes, commentsRes, communitiesRes, deletedRes] =
@@ -95,18 +96,25 @@ async function fetchFeed(): Promise<FeedData> {
   if (_feedCache && Date.now() - _feedCache.at < FEED_BROWSER_TTL) {
     return _feedCache.data;
   }
-  try {
-    const res = await fetch("/api/feed");
-    if (!res.ok) throw new Error(`feed ${res.status}`);
-    const data: FeedData = await res.json();
-    _feedCache = { data, at: Date.now() };
-    return data;
-  } catch {
-    // API route unavailable or errored — fall back to direct Supabase
-    const data = await fetchFeedFromSupabase();
-    _feedCache = { data, at: Date.now() };
-    return data;
-  }
+  // Deduplicate: if a fetch is in-flight, reuse its promise
+  if (_feedInFlight) return _feedInFlight;
+
+  _feedInFlight = (async () => {
+    try {
+      const res = await fetch("/api/feed");
+      if (!res.ok) throw new Error(`feed ${res.status}`);
+      const data: FeedData = await res.json();
+      _feedCache = { data, at: Date.now() };
+      return data;
+    } catch {
+      const data = await fetchFeedFromSupabase();
+      _feedCache = { data, at: Date.now() };
+      return data;
+    } finally {
+      _feedInFlight = null;
+    }
+  })();
+  return _feedInFlight;
 }
 
 // ── Posts ─────────────────────────────────────────────────────────────────────

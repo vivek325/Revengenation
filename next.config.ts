@@ -32,8 +32,12 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  compress: true,
   experimental: {
     optimizePackageImports: ["lucide-react"],
+  },
+  turbopack: {
+    root: __dirname,
   },
   async headers() {
     return [

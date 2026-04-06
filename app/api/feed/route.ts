@@ -8,7 +8,7 @@ const supabase = createClient(
 );
 
 const CACHE_KEY = "feed:v1";
-const CACHE_TTL = 60; // 1 minute — so new posts appear quickly
+const CACHE_TTL = 300; // 5 minutes
 
 export async function GET() {
   const redis = getRedis();
@@ -19,7 +19,7 @@ export async function GET() {
       const cached = await redis.get(CACHE_KEY);
       if (cached) {
         return NextResponse.json(cached, {
-          headers: { "X-Cache": "HIT", "Cache-Control": "public, max-age=60" },
+          headers: { "X-Cache": "HIT", "Cache-Control": "public, max-age=300, stale-while-revalidate=60" },
         });
       }
     } catch {
