@@ -32,16 +32,21 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
   useEffect(() => {
     let active = true;
     async function loadSession() {
-      const session = await getSession();
-      if (!active) return;
-      setUser(session);
-      if (session) {
-        const p = await getProfile(session.username);
-        if (active) setProfile(p);
-      } else {
-        setProfile(null);
+      try {
+        const session = await getSession();
+        if (!active) return;
+        setUser(session);
+        if (session) {
+          const p = await getProfile(session.username);
+          if (active) setProfile(p);
+        } else {
+          setProfile(null);
+        }
+      } catch {
+        // session fetch failed — show logged-out state
+      } finally {
+        if (active) setMounted(true);
       }
-      setMounted(true);
     }
     loadSession();
     // Only re-run on actual auth changes, NOT on every route navigation
