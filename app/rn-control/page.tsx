@@ -118,7 +118,7 @@ export default function Admin() {
       votes: 1,
       createdAt: new Date().toISOString(),
     };
-    await saveUserAddedPost(newPost, session?.id || "");
+    await saveUserAddedPost(newPost);
     setUserPosts((prev) => [...prev, newPost]);
     setForm(EMPTY_FORM);
     setShowForm(false);
