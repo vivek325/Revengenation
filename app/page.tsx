@@ -15,6 +15,7 @@ import {
   getAllCommentCounts,
   markPostDeleted,
   updatePost,
+  bustFeedCache,
 } from "@/lib/storage";
 import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post, Community } from "@/types";
@@ -108,6 +109,17 @@ export default function Home() {
     getUserCommunities().then((comms) => setUserCommunities(comms));
     getAllCommentCounts().then((counts) => setCommentCounts(counts));
     fetch("/api/videos").then((r) => r.json()).then((d) => setFeaturedVideos(d.videos || [])).catch(() => {});
+
+    // Listen for cross-tab admin deletes — remove post from feed instantly
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "rn_admin_deleted_post" && e.newValue) {
+        const id = Number(e.newValue);
+        bustFeedCache();
+        setDeletedIds((prev) => prev.includes(id) ? prev : [...prev, id]);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // User-created community names (posts in these should NOT appear on main feed)

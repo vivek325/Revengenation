@@ -20,6 +20,12 @@ export function bustCache(...keys: string[]) {
   if (keys.some((k) => feedKeys.has(k))) _feedCache = null;
 }
 
+// Instantly clear the in-memory feed cache (call this after a post is deleted so
+// the next getUserAddedPosts() re-fetches from the server instead of serving stale data)
+export function bustFeedCache() {
+  _feedCache = null;
+}
+
 // ── Server-backed feed cache (Redis via /api/feed) ────────────────────────────
 interface FeedData {
   posts: Post[];

@@ -427,6 +427,10 @@ function Posts() {
 
   const act = async (action: string, id: number | string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
+    // Broadcast delete to all open tabs (home feed removes it instantly)
+    if (action === "delete") {
+      try { localStorage.setItem("rn_admin_deleted_post", String(id)); } catch {}
+    }
     load(true);
   };
 
