@@ -151,8 +151,7 @@ export async function completeSignup(
 export async function login(email: string, password: string): Promise<string | null> {
   clearSessionCache();
   try {
-    // Call our server API route — EC2→Supabase (both Mumbai) is fast & reliable
-    // Avoids browser→Supabase latency/timeout issues entirely
+    // Call server API — EC2→Supabase (both Mumbai), fast & reliable
     const res = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -161,12 +160,33 @@ export async function login(email: string, password: string): Promise<string | n
     const data = await res.json();
     if (!res.ok) return data.error || "Invalid email or password.";
 
-    // Set the session on the browser Supabase client using the returned tokens
-    const { error: sessErr } = await supabase.auth.setSession({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-    });
-    if (sessErr) return "Failed to establish session. Please try again.";
+    // Write Supabase session directly to localStorage — skips setSession() network call entirely
+    // Supabase JS client reads this key on next page load and considers user logged in
+    try {
+      const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL!.replace("https://", "").split(".")[0];
+      localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify({
+        access_token: data.access_token,
+        token_type: "bearer",
+        expires_in: data.expires_in,
+        expires_at: data.expires_at,
+        refresh_token: data.refresh_token,
+        user: data.user,
+      }));
+    } catch {}
+
+    // Populate our own session cache — getSessionSync() works instantly after redirect
+    if (data.user && data.profile?.username) {
+      const authUser: AuthUser = {
+        id: data.user.id,
+        username: data.profile.username,
+        email: data.user.email || email.trim(),
+        isAdmin: data.profile.isAdmin || false,
+      };
+      _sessionCache = authUser;
+      _sessionCacheAt = Date.now();
+      saveSessionToStorage(authUser);
+    }
+
     return null;
   } catch {
     return "Login failed. Please check your connection and try again.";

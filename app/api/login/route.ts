@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  // 10 attempts per 15 minutes per IP
   if (!checkRateLimit(`login:${ip}`, 10, 15 * 60 * 1000)) {
     return NextResponse.json(
       { error: "Too many login attempts. Please wait a few minutes." },
@@ -23,8 +28,8 @@ export async function POST(req: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   try {
-    // Server-to-server: EC2 (Mumbai) → Supabase (Mumbai) — fast & reliable
-    const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+    // Server-to-server auth: EC2 (Mumbai) → Supabase (Mumbai) — fast & reliable
+    const authRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -34,17 +39,38 @@ export async function POST(req: NextRequest) {
       signal: AbortSignal.timeout(30000),
     });
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      // Don't leak which field was wrong — generic message
+    const authData = await authRes.json();
+    if (!authRes.ok) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
+    const userId = authData.user?.id;
+    const expiresIn = authData.expires_in || 3600;
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+
+    // Fetch profile in parallel — no extra round-trip from client
+    let username = "";
+    let isAdmin = false;
+    if (userId) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("username, is_admin")
+        .eq("id", userId)
+        .maybeSingle();
+      username = profile?.username || "";
+      isAdmin = profile?.is_admin || false;
+    }
+
     return NextResponse.json({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_in: data.expires_in,
+      // Full Supabase session — client writes to localStorage directly, no setSession() call
+      access_token: authData.access_token,
+      token_type: "bearer",
+      expires_in: expiresIn,
+      expires_at: expiresAt,
+      refresh_token: authData.refresh_token,
+      user: authData.user,
+      // Our app profile
+      profile: { username, isAdmin },
     });
   } catch {
     return NextResponse.json(
