@@ -115,7 +115,7 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
             {isDark ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
           </button>
 
-          {mounted && user ? (
+          {!mounted ? null : user ? (
             <>
               <Link
                 href="/submit"
