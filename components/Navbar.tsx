@@ -7,7 +7,7 @@ import {
   Menu, X, Flame, Moon, Sun, Plus, LogIn, LogOut,
   UserPlus, User, ChevronDown,
 } from "lucide-react";
-import { getSession, logout } from "@/lib/auth";
+import { getSession, logout, getSessionSync } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 import { getProfile } from "@/lib/storage";
 import type { UserProfile } from "@/lib/storage";
@@ -31,11 +31,20 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
 
   useEffect(() => {
     let active = true;
+
+    // 1. Instant: synchronously read from localStorage — shows buttons before any async
+    const cached = getSessionSync();
+    if (cached) {
+      setUser(cached);
+      setMounted(true);
+    }
+
     async function loadSession() {
       try {
         const session = await getSession();
         if (!active) return;
         setUser(session);
+        setMounted(true); // ensure mounted even when no cache exists
         if (session) {
           const p = await getProfile(session.username);
           if (active) setProfile(p);
@@ -43,8 +52,6 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
           setProfile(null);
         }
       } catch {
-        // session fetch failed — show logged-out state
-      } finally {
         if (active) setMounted(true);
       }
     }

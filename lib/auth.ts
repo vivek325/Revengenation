@@ -237,6 +237,12 @@ export function clearSessionCache() {
   try { localStorage.removeItem(LS_KEY); } catch {}
 }
 
+/** Synchronously read session from localStorage — safe to call on client before any async. */
+export function getSessionSync(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  return readSessionFromStorage();
+}
+
 /** Get the current logged-in user with profile. Returns null if not logged in. */
 export async function getSession(): Promise<AuthUser | null> {
   // 1. In-memory cache (fastest)

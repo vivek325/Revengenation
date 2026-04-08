@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { login, signUp, sendOtp, verifyOtp, sendPasswordReset, sendSignupVerification, verifySignupOtp, completeSignup } from "@/lib/auth";
+import { login, signUp, sendOtp, verifyOtp, sendPasswordReset, sendSignupVerification, verifySignupOtp, completeSignup, getSession } from "@/lib/auth";
 
 const PRESET_AVATARS = [
   { emoji: "🔥", bg: "from-[#E11D48] to-[#F97316]" },
@@ -95,6 +95,8 @@ function LoginContent() {
     setLoading(true);
     const err = await login(loginEmail, loginPassword);
     if (err) { setError(err); setLoading(false); return; }
+    // Pre-warm session cache so navbar shows instantly on next page
+    await getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 
@@ -116,6 +118,8 @@ function LoginContent() {
     setLoading(true);
     const err = await verifyOtp(loginEmail, otpCode);
     if (err) { setError(err); setLoading(false); return; }
+    // Pre-warm session cache so navbar shows instantly on next page
+    await getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 
@@ -147,6 +151,8 @@ function LoginContent() {
     setLoading(true);
     const err = await completeSignup(email, username, password, avatarUrl || undefined, selectedEmoji || undefined);
     if (err) { setError(err); setLoading(false); return; }
+    // Pre-warm session cache so navbar shows instantly on next page
+    await getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 
