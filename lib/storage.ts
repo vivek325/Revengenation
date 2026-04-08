@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { Post, Comment, Community } from "@/types";
+import { posts as _staticPosts } from "@/data/posts";
 
 // ── In-memory browser cache (per-session fallback) ──────────────────────────
 const _cache = new Map<string, { value: unknown; at: number }>();
@@ -134,6 +135,10 @@ export function getPostFromFeedCacheSync(id: number): Post | null {
 
 // Fetch a single post WITH full_story — used only on the story detail page
 export async function getPostById(id: number): Promise<Post | null> {
+  // Static posts live only in data/posts.ts — no DB lookup needed
+  const staticPost = _staticPosts.find((p) => p.id === id);
+  if (staticPost) return staticPost;
+
   const cacheKey = `post:${id}`;
   const cached = getCache<Post>(cacheKey, 300_000);
   if (cached) return cached;

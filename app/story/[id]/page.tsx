@@ -83,9 +83,11 @@ export default function StoryPage() {
       getDeletedPostIds(),
       getVoteAdjustments(),
     ]).then(([found, deletedIds, adj]) => {
-      if (!found || deletedIds.includes(id)) { router.push("/"); return; }
-      setPost(found);
-      setVotes(found.votes + (adj[found.id] || 0));
+      // Use DB result; fall back to static/feed cache if DB returns null (static posts aren't in DB)
+      const resolved = found ?? cachedPost;
+      if (!resolved || deletedIds.includes(id)) { router.push("/"); return; }
+      setPost(resolved);
+      setVotes(resolved.votes + (adj[resolved.id] || 0));
       setLoading(false);
     });
 
