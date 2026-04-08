@@ -428,9 +428,17 @@ function Posts() {
 
   const act = async (action: string, id: number | string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
-    // Bust feed cache (same-tab) and broadcast to all other tabs
     if (action === "delete") {
       bustFeedCache();
+      // Remove from rn_posts_v3 cache so home page instant-render doesn't show deleted post
+      try {
+        const raw = localStorage.getItem("rn_posts_v3");
+        if (raw) {
+          const filtered = (JSON.parse(raw) as { id: number }[]).filter((p) => p.id !== Number(id));
+          localStorage.setItem("rn_posts_v3", JSON.stringify(filtered));
+        }
+      } catch {}
+      // Signal other tabs
       try { localStorage.setItem("rn_admin_deleted_post", String(id)); } catch {}
     }
     load(true);
