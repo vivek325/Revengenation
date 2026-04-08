@@ -166,8 +166,8 @@ export async function saveUserAddedPost(post: Post, userId: string): Promise<voi
     created_at: post.createdAt,
     user_id: userId || null,
   });
-  // Bust Redis feed cache so new post appears immediately
-  try { await fetch("/api/feed", { method: "DELETE" }); } catch {}
+  // Bust Redis feed cache in background — don't block on it
+  fetch("/api/feed", { method: "DELETE" }).catch(() => {});
 }
 
 export async function getDeletedPostIds(): Promise<number[]> {

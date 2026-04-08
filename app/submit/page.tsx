@@ -141,7 +141,7 @@ function SubmitPageInner() {
       imageUrl: mode === "post" && imagePreview ? imagePreview : undefined,
       coverImage: mode === "blog" && coverImage ? coverImage : undefined,
     };
-    await saveUserAddedPost(newPost, currentUserId);
+    saveUserAddedPost(newPost, currentUserId).catch(() => {});
     setLoading(false);
     setSubmitted(true);
   };
