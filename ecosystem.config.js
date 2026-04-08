@@ -2,11 +2,11 @@ module.exports = {
   apps: [
     {
       name: "revengenation",
-      script: "node_modules/.bin/next",
+      script: "npm",
       args: "start",
       cwd: "./",
-      instances: "max",        // EC2 ke sabhi CPU cores use karega
-      exec_mode: "cluster",    // cluster mode for load balancing
+      instances: 1,
+      exec_mode: "fork",
       autorestart: true,
       watch: false,
       max_memory_restart: "512M",
