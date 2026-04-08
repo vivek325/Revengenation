@@ -99,6 +99,15 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
   };
 }
 
+// Merge static (hardcoded) posts into feed data, skipping any that are deleted
+function mergeStaticPosts(data: FeedData): FeedData {
+  const dbIds = new Set(data.posts.map((p) => p.id));
+  const deleted = new Set(data.deletedPostIds);
+  const toAdd = _staticPosts.filter((p) => !dbIds.has(p.id) && !deleted.has(p.id));
+  if (toAdd.length === 0) return data;
+  return { ...data, posts: [...data.posts, ...toAdd] };
+}
+
 async function fetchFeed(): Promise<FeedData> {
   if (_feedCache && Date.now() - _feedCache.at < FEED_BROWSER_TTL) {
     // Always re-apply mergeJustSubmitted so a just-submitted post shows even on cache hit
@@ -111,12 +120,14 @@ async function fetchFeed(): Promise<FeedData> {
     try {
       const res = await fetch("/api/feed");
       if (!res.ok) throw new Error(`feed ${res.status}`);
-      const data: FeedData = await res.json();
+      let data: FeedData = await res.json();
+      data = mergeStaticPosts(data);
       data.posts = mergeJustSubmitted(data.posts);
       _feedCache = { data, at: Date.now() };
       return data;
     } catch {
-      const data = await fetchFeedFromSupabase();
+      let data = await fetchFeedFromSupabase();
+      data = mergeStaticPosts(data);
       data.posts = mergeJustSubmitted(data.posts);
       _feedCache = { data, at: Date.now() };
       return data;
