@@ -102,7 +102,7 @@ export async function GET() {
   }
 
   return NextResponse.json(payload, {
-    headers: { "X-Cache": "MISS", "Cache-Control": "public, max-age=30" },
+    headers: { "X-Cache": "MISS", "Cache-Control": "public, max-age=60, stale-while-revalidate=300" },
   });
 }
 

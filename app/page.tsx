@@ -16,7 +16,7 @@ import {
   markPostDeleted,
   updatePost,
 } from "@/lib/storage";
-import { getSession } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post, Community } from "@/types";
 import { Flame, Sparkles, TrendingUp, Rocket, ChevronUp, ChevronDown, X, Maximize2, Search } from "lucide-react";
 
@@ -67,6 +67,13 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    // Set session instantly from localStorage — zero wait for userId/username
+    const syncSession = typeof window !== "undefined" ? getSessionSync() : null;
+    if (syncSession) {
+      setUserId(syncSession.id);
+      setUsername(syncSession.username);
+    }
+
     // Show localStorage cache INSTANTLY (0ms wait) on repeat visits
     try {
       const local = localStorage.getItem("rn_posts_v3");
@@ -84,6 +91,7 @@ export default function Home() {
       try { localStorage.removeItem("rn_posts_v2"); } catch {}
     });
 
+    // Confirm/refresh session in background (updates admin status etc)
     getSession().then((session) => {
       setUserId(session?.id || null);
       setUsername(session?.username || null);

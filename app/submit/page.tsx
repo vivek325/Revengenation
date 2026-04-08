@@ -5,7 +5,7 @@ import RNLoader from "@/components/RNLoader";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { saveUserAddedPost, getUserCommunities } from "@/lib/storage";
-import { getSession } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post } from "@/types";
 
 const BASE_CATEGORIES = [
@@ -39,7 +39,9 @@ export default function SubmitPage() {
 function SubmitPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [authChecked, setAuthChecked] = useState(false);
+  // Instant auth check from localStorage - no blank flash while async resolves
+  const syncSession = typeof window !== "undefined" ? getSessionSync() : null;
+  const [authChecked, setAuthChecked] = useState(() => !!syncSession);
   const [mode, setMode] = useState<ModeType>("post");
   const [categories, setCategories] = useState<string[]>(BASE_CATEGORIES);
   const [category, setCategory] = useState("Red Flag Guide");
@@ -56,7 +58,7 @@ function SubmitPageInner() {
   const [postAnon, setPostAnon] = useState(false);
   const [postAsRN, setPostAsRN] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentUser, setCurrentUser] = useState("");
+  const [currentUser, setCurrentUser] = useState(syncSession?.username || "");
   const [currentUserId, setCurrentUserId] = useState("");
   const [ownedCommunityNames, setOwnedCommunityNames] = useState<Set<string>>(new Set());
   const [postAsCommunity, setPostAsCommunity] = useState(false);
@@ -73,20 +75,19 @@ function SubmitPageInner() {
         setCurrentUserId(session.id);
         setIsAdmin(session.isAdmin ?? false);
         setAuthChecked(true);
-        const userComms = await getUserCommunities();
-        const userNames = userComms.map((c) => c.name);
-        // Only base categories in the dropdown — communities are selected via URL only
-        setCategories(BASE_CATEGORIES);
-        const allNames = new Set(userNames);
-        setAllCommunityNames(allNames);
-        const meta: Record<string, { emoji: string; color: string }> = {};
-        userComms.forEach((c) => { meta[c.name] = { emoji: c.emoji, color: c.color }; });
-        setCommunityMeta(meta);
-        const owned = new Set(userComms.filter((c) => c.createdBy === session.username).map((c) => c.name));
-        setOwnedCommunityNames(owned);
-        // Pre-select category from URL param (base or community)
-        const urlCat = searchParams?.get("category");
-        if (urlCat && (BASE_CATEGORIES.includes(urlCat) || allNames.has(urlCat))) setCategory(urlCat);
+        getUserCommunities().then((userComms) => {
+          const userNames = userComms.map((c) => c.name);
+          setCategories(BASE_CATEGORIES);
+          const allNames = new Set(userNames);
+          setAllCommunityNames(allNames);
+          const meta: Record<string, { emoji: string; color: string }> = {};
+          userComms.forEach((c) => { meta[c.name] = { emoji: c.emoji, color: c.color }; });
+          setCommunityMeta(meta);
+          const owned = new Set(userComms.filter((c) => c.createdBy === session.username).map((c) => c.name));
+          setOwnedCommunityNames(owned);
+          const urlCat = searchParams?.get("category");
+          if (urlCat && (BASE_CATEGORIES.includes(urlCat) || allNames.has(urlCat))) setCategory(urlCat);
+        });
       }
     }
     check();

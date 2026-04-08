@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import RNLoader from "@/components/RNLoader";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import {
   getUserAddedPosts,
   getAllComments,
@@ -32,7 +32,9 @@ function timeAgo(dateStr: string) {
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<{ username: string; isAdmin: boolean } | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  // Instant auth check from localStorage - no blank flash
+  const syncSession = typeof window !== "undefined" ? getSessionSync() : null;
+  const [authChecked, setAuthChecked] = useState(() => !!syncSession);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("Posts");
   const [editing, setEditing] = useState(false);
@@ -42,8 +44,10 @@ export default function ProfilePage() {
   const [upvotedIds, setUpvotedIds] = useState<Set<number>>(new Set());
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
-  const [profile, setProfile] = useState<UserProfile>({ username: "", bio: "", displayName: "" });
-  const [editForm, setEditForm] = useState({ displayName: "", bio: "" });
+  const [profile, setProfile] = useState<UserProfile>(
+    syncSession ? { username: syncSession.username, bio: "", displayName: syncSession.username } : { username: "", bio: "", displayName: "" }
+  );
+  const [editForm, setEditForm] = useState({ displayName: syncSession?.username || "", bio: "" });
 
   useEffect(() => {
     async function load() {
@@ -53,9 +57,10 @@ export default function ProfilePage() {
         return;
       }
       setUser(session);
-      setAuthChecked(true); // show page immediately once auth confirmed
+      setAuthChecked(true);
 
-      const [added, allComments, up, communities, profileData] = await Promise.all([
+      // Fire all in parallel — don't await sequentially
+      const [added, allComments, up, comms, profileData] = await Promise.all([
         getUserAddedPosts(),
         getAllComments(),
         getUpvotedPosts(session.id),
@@ -67,7 +72,7 @@ export default function ProfilePage() {
       setMyPosts(namedMine);
       setMyComments(allComments.filter((c) => c.author === session.username));
       setUpvotedIds(up);
-      setCommunities(communities);
+      setCommunities(comms);
 
       const { posts: staticPosts } = await import("@/data/posts");
       setAllPosts([...staticPosts, ...added]);
@@ -76,6 +81,8 @@ export default function ProfilePage() {
       setEditForm({ displayName: profileData.displayName || session.username, bio: profileData.bio || "" });
       setDataLoaded(true);
     }
+    // If sync says logged in, start the user as logged in immediately
+    if (syncSession) setUser(syncSession);
     load();
   }, [router]);
 

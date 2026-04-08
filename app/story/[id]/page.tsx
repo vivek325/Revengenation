@@ -17,7 +17,7 @@ import {
   updatePost,
   markPostDeleted,
 } from "@/lib/storage";
-import { getSession } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import RNLoader from "@/components/RNLoader";
 import type { Post, Comment } from "@/types";
 
@@ -47,8 +47,14 @@ export default function StoryPage() {
   const [commentBody, setCommentBody] = useState("");
   const [commentSort, setCommentSort] = useState<CommentSort>("New");
   const [submitting, setSubmitting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getSessionSync()?.username ?? null;
+  });
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getSessionSync()?.id ?? null;
+  });
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
@@ -64,29 +70,28 @@ export default function StoryPage() {
       // Check static posts first (instant, no network)
       const staticFound = staticPosts.find((p) => p.id === id);
 
-      const [found, deletedIds, adj, session, fetchedComments] = await Promise.all([
+      // Session already set from localStorage sync; confirm in background
+      getSession().then((session) => {
+        setCurrentUser(session?.username ?? null);
+        setCurrentUserId(session?.id ?? null);
+        if (session) {
+          Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
+            ([up, down]) => setVoteState(up.has(id) ? "up" : down.has(id) ? "down" : null)
+          );
+        }
+      });
+
+      const [found, deletedIds, adj, fetchedComments] = await Promise.all([
         staticFound ? Promise.resolve(staticFound) : getPostById(id),
         getDeletedPostIds(),
         getVoteAdjustments(),
-        getSession(),
         getComments(id),
       ]);
       if (!found || deletedIds.includes(id)) { router.push("/"); return; }
 
       setPost(found);
       setVotes(found.votes + (adj[found.id] || 0));
-      setCurrentUser(session?.username ?? null);
-      setCurrentUserId(session?.id ?? null);
       setComments(fetchedComments);
-
-      if (session) {
-        const [up, down] = await Promise.all([
-          getUpvotedPosts(session.id),
-          getDownvotedPosts(session.id),
-        ]);
-        setVoteState(up.has(found.id) ? "up" : down.has(found.id) ? "down" : null);
-      }
-
       setLoading(false);
     }
     init();

@@ -19,7 +19,7 @@ import {
   deleteCommunity,
   getAllCommentCounts,
 } from "@/lib/storage";
-import { getSession } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import RNLoader from "@/components/RNLoader";
 import type { Community, Post } from "@/types";
 
@@ -43,9 +43,13 @@ export default function CommunityPage() {
   const [loading, setLoading] = useState(true);
   const [joined, setJoined] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? getSessionSync()?.id ?? null : null
+  );
   const [joinLoading, setJoinLoading] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(() =>
+    typeof window !== "undefined" ? getSessionSync()?.username ?? null : null
+  );
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [voteAdjustments, setVoteAdjustments] = useState<Record<number, number>>({});
   const [upvoted, setUpvoted] = useState<Set<number>>(new Set());
@@ -58,12 +62,28 @@ export default function CommunityPage() {
       setLoading(true);
 
       // Start session + feed data in parallel while we resolve community
-      const [sessionRes, adjRes, countsRes, userCommsRes] = await Promise.all([
-        getSession(),
+      const [adjRes, countsRes, userCommsRes] = await Promise.all([
         getVoteAdjustments(),
         getAllCommentCounts(),
         getUserCommunities(),
       ]);
+
+      // Confirm session in background (already set from sync)
+      getSession().then((sessionRes) => {
+        setUserId(sessionRes?.id || null);
+        setUsername(sessionRes?.username || null);
+        if (sessionRes?.id && community) {
+          Promise.all([
+            isMember(community.id, sessionRes.id),
+            getUpvotedPosts(sessionRes.id),
+            getDownvotedPosts(sessionRes.id),
+          ]).then(([memberStatus, up, down]) => {
+            setJoined(memberStatus);
+            setUpvoted(up);
+            setDownvoted(down);
+          });
+        }
+      });
 
       // Try built-in first, then DB
       let comm: Community | null = BUILTIN.find((c) => c.id === id) || null;
@@ -72,8 +92,6 @@ export default function CommunityPage() {
       setCommunity(comm);
 
       setVoteAdjustments(adjRes);
-      setUserId(sessionRes?.id || null);
-      setUsername(sessionRes?.username || null);
       setCommentCounts(countsRes);
 
       // Fetch posts + member count in parallel
@@ -83,17 +101,6 @@ export default function CommunityPage() {
       ]);
       setPosts(communityPosts);
       setMemberCount(count);
-
-      if (sessionRes?.id) {
-        const [memberStatus, up, down] = await Promise.all([
-          isMember(comm.id, sessionRes.id),
-          getUpvotedPosts(sessionRes.id),
-          getDownvotedPosts(sessionRes.id),
-        ]);
-        setJoined(memberStatus);
-        setUpvoted(up);
-        setDownvoted(down);
-      }
 
       setLoading(false);
     }
