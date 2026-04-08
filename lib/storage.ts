@@ -104,10 +104,12 @@ async function fetchFeed(): Promise<FeedData> {
       const res = await fetch("/api/feed");
       if (!res.ok) throw new Error(`feed ${res.status}`);
       const data: FeedData = await res.json();
+      data.posts = mergeJustSubmitted(data.posts);
       _feedCache = { data, at: Date.now() };
       return data;
     } catch {
       const data = await fetchFeedFromSupabase();
+      data.posts = mergeJustSubmitted(data.posts);
       _feedCache = { data, at: Date.now() };
       return data;
     } finally {
@@ -150,22 +152,33 @@ export async function getPostById(id: number): Promise<Post | null> {
   }
 }
 
-// Optimistically inject a post into the in-memory + localStorage feed cache
-// so the home page shows it immediately without waiting for the DB round-trip
-export function injectPostIntoFeedCache(post: Post): void {
-  // Update in-memory feed cache
-  if (_feedCache) {
-    _feedCache.data.posts = [post, ..._feedCache.data.posts];
-  }
-  // Update localStorage feed cache
+// Merge any just-submitted post (not yet in Redis cache) into feed results
+function mergeJustSubmitted(posts: Post[]): Post[] {
   try {
-    const raw = localStorage.getItem("rn_posts_v3");
-    if (raw) {
-      const posts: Post[] = JSON.parse(raw);
-      localStorage.setItem("rn_posts_v3", JSON.stringify([post, ...posts]));
-    } else {
-      localStorage.removeItem("rn_posts_v3"); // force fresh fetch
+    const raw = typeof window !== "undefined" ? localStorage.getItem("rn_just_submitted") : null;
+    if (!raw) return posts;
+    const { post, at } = JSON.parse(raw) as { post: Post; at: number };
+    // Keep for 6 minutes (slightly over Redis TTL of 5 min) then discard
+    if (Date.now() - at > 360_000) {
+      localStorage.removeItem("rn_just_submitted");
+      return posts;
     }
+    const ids = new Set(posts.map((p) => p.id));
+    if (ids.has(post.id)) {
+      // Post now appears naturally — clear pending entry
+      localStorage.removeItem("rn_just_submitted");
+      return posts;
+    }
+    return [post, ...posts];
+  } catch {
+    return posts;
+  }
+}
+
+// Store a just-submitted post so fetchFeed always includes it until Redis catches up
+export function injectPostIntoFeedCache(post: Post): void {
+  try {
+    localStorage.setItem("rn_just_submitted", JSON.stringify({ post, at: Date.now() }));
   } catch {}
 }
 
