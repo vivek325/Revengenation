@@ -150,17 +150,26 @@ export async function completeSignup(
 /** Login with email + password. Returns error string on failure, null on success. */
 export async function login(email: string, password: string): Promise<string | null> {
   clearSessionCache();
-  // 12 second timeout so spinner never hangs forever
-  const loginPromise = supabase.auth.signInWithPassword({ email: email.trim(), password });
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("timeout")), 12000)
-  );
   try {
-    const { error } = await Promise.race([loginPromise, timeoutPromise]);
-    if (error) return "Invalid email or password.";
+    // Call our server API route — EC2→Supabase (both Mumbai) is fast & reliable
+    // Avoids browser→Supabase latency/timeout issues entirely
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    const data = await res.json();
+    if (!res.ok) return data.error || "Invalid email or password.";
+
+    // Set the session on the browser Supabase client using the returned tokens
+    const { error: sessErr } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (sessErr) return "Failed to establish session. Please try again.";
     return null;
   } catch {
-    return "Login timed out. Please check your connection and try again.";
+    return "Login failed. Please check your connection and try again.";
   }
 }
 
