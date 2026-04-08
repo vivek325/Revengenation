@@ -23,28 +23,25 @@ interface NavbarProps {
 export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleTheme }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  // Initialize synchronously from localStorage — no async wait before first render
+  const [user, setUser] = useState<AuthUser | null>(() =>
+    typeof window !== "undefined" ? getSessionSync() : null
+  );
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // mounted=true on client immediately — avoids SSR/hydration mismatch only
+  const [mounted, setMounted] = useState(() => typeof window !== "undefined");
   const [profileDropdown, setProfileDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
 
-    // 1. Instant: synchronously read from localStorage — shows buttons before any async
-    const cached = getSessionSync();
-    if (cached) {
-      setUser(cached);
-      setMounted(true);
-    }
-
     async function loadSession() {
       try {
         const session = await getSession();
         if (!active) return;
         setUser(session);
-        setMounted(true); // ensure mounted even when no cache exists
+        setMounted(true);
         if (session) {
           const p = await getProfile(session.username);
           if (active) setProfile(p);

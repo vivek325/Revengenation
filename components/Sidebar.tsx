@@ -8,7 +8,7 @@ import {
   BarChart2, Users, LayoutGrid, FileText, MessageSquare,
   Flag, Tag, Megaphone, Settings, ShieldAlert, LogIn, UserPlus, User, LogOut,
 } from "lucide-react";
-import { getSession, logout } from "@/lib/auth";
+import { getSession, logout, getSessionSync } from "@/lib/auth";
 import { getUserCommunities } from "@/lib/storage";
 import type { AuthUser } from "@/lib/auth";
 import type { Community } from "@/types";
@@ -29,8 +29,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 function SidebarInner({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // Initialize synchronously from localStorage — no async wait before first render
+  const [user, setUser] = useState<AuthUser | null>(() =>
+    typeof window !== "undefined" ? getSessionSync() : null
+  );
+  // mounted=true on client immediately — avoids SSR hydration mismatch only
+  const [mounted, setMounted] = useState(() => typeof window !== "undefined");
   const [userCommunities, setUserCommunities] = useState<Community[]>([]);
   const [adminExpanded, setAdminExpanded] = useState(false);
 
@@ -40,13 +44,13 @@ function SidebarInner({ open, onClose }: SidebarProps) {
   };
 
   useEffect(() => {
-    async function load() {
-      const [session, comms] = await Promise.all([getSession(), getUserCommunities()]);
+    // Confirm session in background (updates if cache stale)
+    getSession().then((session) => {
       setUser(session);
-      setUserCommunities(comms);
       setMounted(true);
-    }
-    load();
+    }).catch(() => setMounted(true));
+    // Communities load separately — doesn't block auth UI
+    getUserCommunities().then((comms) => setUserCommunities(comms));
   }, []);
 
   useEffect(() => {
