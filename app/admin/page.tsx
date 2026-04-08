@@ -5,7 +5,6 @@ import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
 
 //  Types 
 
@@ -106,13 +105,23 @@ interface Category {
 
 //  Helpers 
 
-async function getToken(): Promise<string> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token || "";
+// Read token synchronously from localStorage — no async Supabase SDK round-trip
+function getTokenSync(): string {
+  try {
+    // Our login writes the full session here
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const ref = url.replace("https://", "").split(".")[0];
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed.access_token || "";
+    }
+  } catch {}
+  return "";
 }
 
 async function adminFetch(url: string, opts?: RequestInit) {
-  const token = await getToken();
+  const token = getTokenSync();
   return fetch(url, {
     ...opts,
     headers: {
@@ -122,6 +131,21 @@ async function adminFetch(url: string, opts?: RequestInit) {
     },
   });
 }
+
+// Module-level tab data cache — switching tabs never re-fetches within same session
+const _tabCache: Record<string, { data: unknown; at: number }> = {};
+const TAB_CACHE_TTL = 120_000; // 2 minutes
+
+async function cachedAdminFetch<T>(url: string): Promise<T> {
+  const hit = _tabCache[url];
+  if (hit && Date.now() - hit.at < TAB_CACHE_TTL) return hit.data as T;
+  const res = await adminFetch(url);
+  const data = await res.json();
+  _tabCache[url] = { data, at: Date.now() };
+  return data as T;
+}
+
+function bustTabCache(url: string) { delete _tabCache[url]; }
 
 //  Sub-components 
 
@@ -234,10 +258,11 @@ function Users() {
   const [banReason, setBanReason] = useState("");
   const [banDuration, setBanDuration] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    const url = `/api/admin/users?search=${encodeURIComponent(search)}&filter=${filter}`;
+    if (bust) bustTabCache(url);
     setLoading(true);
-    const res = await adminFetch(`/api/admin/users?search=${encodeURIComponent(search)}&filter=${filter}`);
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ users: UserRow[] }>(url);
     setUsers(data.users || []);
     setLoading(false);
   }, [search, filter]);
@@ -246,7 +271,7 @@ function Users() {
 
   const act = async (action: string, userId: string, extra?: object) => {
     await adminFetch("/api/admin/users", { method: "POST", body: JSON.stringify({ action, userId, ...extra }) });
-    load();
+    load(true);
   };
 
   const handleBan = async () => {
@@ -337,10 +362,10 @@ function Communities() {
   const [communities, setCommunities] = useState<CommunityRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) bustTabCache("/api/admin/content?type=communities");
     setLoading(true);
-    const res = await adminFetch("/api/admin/content?type=communities");
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ communities: CommunityRow[] }>("/api/admin/content?type=communities");
     setCommunities(data.communities || []);
     setLoading(false);
   }, []);
@@ -349,7 +374,7 @@ function Communities() {
 
   const act = async (action: string, id: string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "community", targetId: id }) });
-    load();
+    load(true);
   };
 
   return (
@@ -390,10 +415,10 @@ function Posts() {
   const [posts, setPosts] = useState<PostRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) bustTabCache("/api/admin/content?type=posts");
     setLoading(true);
-    const res = await adminFetch("/api/admin/content?type=posts");
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ posts: PostRow[] }>("/api/admin/content?type=posts");
     setPosts(data.posts || []);
     setLoading(false);
   }, []);
@@ -402,7 +427,7 @@ function Posts() {
 
   const act = async (action: string, id: number | string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
-    load();
+    load(true);
   };
 
   return (
@@ -448,10 +473,10 @@ function Comments() {
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) bustTabCache("/api/admin/content?type=comments");
     setLoading(true);
-    const res = await adminFetch("/api/admin/content?type=comments");
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ comments: CommentRow[] }>("/api/admin/content?type=comments");
     setComments(data.comments || []);
     setLoading(false);
   }, []);
@@ -460,7 +485,7 @@ function Comments() {
 
   const act = async (action: string, id: string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "comment", targetId: id }) });
-    load();
+    load(true);
   };
 
   return (
@@ -499,10 +524,11 @@ function Reports() {
   const [statusFilter, setStatusFilter] = useState("pending");
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    const url = `/api/admin/settings?type=reports&status=${statusFilter}`;
+    if (bust) bustTabCache(url);
     setLoading(true);
-    const res = await adminFetch(`/api/admin/settings?type=reports&status=${statusFilter}`);
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ reports: ReportRow[] }>(url);
     setReports(data.reports || []);
     setLoading(false);
   }, [statusFilter]);
@@ -511,7 +537,7 @@ function Reports() {
 
   const resolve = async (reportId: string, resolution: string) => {
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "resolve_report", reportId, resolution }) });
-    load();
+    load(true);
   };
 
   return (
@@ -556,10 +582,10 @@ function Categories() {
   const [newCat, setNewCat] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) bustTabCache("/api/admin/settings?type=categories");
     setLoading(true);
-    const res = await adminFetch("/api/admin/settings?type=categories");
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ categories: Category[] }>("/api/admin/settings?type=categories");
     setCategories(data.categories || []);
     setLoading(false);
   }, []);
@@ -569,13 +595,13 @@ function Categories() {
   const addCat = async () => {
     if (!newCat.trim()) return;
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "add_category", name: newCat.trim() }) });
-    setNewCat(""); load();
+    setNewCat(""); load(true);
   };
 
   const deleteCat = async (id: string, name: string) => {
     if (!confirm(`Delete category "${name}"?`)) return;
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "delete_category", id }) });
-    load();
+    load(true);
   };
 
   return (
@@ -615,10 +641,10 @@ function SiteSettings() {
   const [newVideoTitle, setNewVideoTitle] = useState("");
   const [videoSaving, setVideoSaving] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) bustTabCache("/api/admin/settings?type=settings");
     setLoading(true);
-    const res = await adminFetch("/api/admin/settings?type=settings");
-    const data = await res.json();
+    const data = await cachedAdminFetch<{ settings: Record<string, string> }>("/api/admin/settings?type=settings");
     const s = data.settings || {};
     setSettings(s);
     try { setVideos(JSON.parse(s.featured_videos || "[]")); } catch { setVideos([]); }
@@ -630,6 +656,7 @@ function SiteSettings() {
   const save = async () => {
     setLoading(true);
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "update_settings", settings }) });
+    bustTabCache("/api/admin/settings?type=settings");
     setSaved(true); setTimeout(() => setSaved(false), 2000); setLoading(false);
   };
 
@@ -738,19 +765,21 @@ function Announcements() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    adminFetch("/api/admin/settings?type=settings").then((r) => r.json()).then((d) => {
+    cachedAdminFetch<{ settings: Record<string, string> }>("/api/admin/settings?type=settings").then((d) => {
       const ann = d.settings?.site_announcement || "";
       setCurrent(ann); setMessage(ann);
     });
-  }, []);
+  }, [])
 
   const send = async () => {
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "send_announcement", message }) });
+    bustTabCache("/api/admin/settings?type=settings");
     setCurrent(message); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
   const clear = async () => {
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "send_announcement", message: "" }) });
+    bustTabCache("/api/admin/settings?type=settings");
     setMessage(""); setCurrent("");
   };
 
@@ -788,14 +817,13 @@ function Security() {
   const [tab, setTab] = useState<"logs" | "ipbans">("logs");
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bust = false) => {
+    if (bust) { bustTabCache("/api/admin/settings?type=logs"); bustTabCache("/api/admin/settings?type=ip_bans"); }
     setLoading(true);
-    const [logsRes, ipRes] = await Promise.all([
-      adminFetch("/api/admin/settings?type=logs"),
-      adminFetch("/api/admin/settings?type=ip_bans"),
+    const [logsData, ipData] = await Promise.all([
+      cachedAdminFetch<{ logs: LogRow[] }>("/api/admin/settings?type=logs"),
+      cachedAdminFetch<{ ip_bans: Array<{ id: string; ip_address: string; reason: string; created_at: string }> }>("/api/admin/settings?type=ip_bans"),
     ]);
-    const logsData = await logsRes.json();
-    const ipData = await ipRes.json();
     setLogs(logsData.logs || []);
     setIpBans(ipData.ip_bans || []);
     setLoading(false);
@@ -806,12 +834,12 @@ function Security() {
   const addIpBan = async () => {
     if (!newIp.trim()) return;
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "add_ip_ban", ip: newIp.trim(), reason: newIpReason }) });
-    setNewIp(""); setNewIpReason(""); load();
+    setNewIp(""); setNewIpReason(""); load(true);
   };
 
   const removeIpBan = async (id: string) => {
     await adminFetch("/api/admin/settings", { method: "POST", body: JSON.stringify({ action: "remove_ip_ban", id }) });
-    load();
+    load(true);
   };
 
   const actionColor = (action: string) => {
@@ -909,13 +937,7 @@ function AdminPageInner() {
       setAdminUser({ username: session.username });
       setAuthChecked(true);
 
-      const { data } = await supabase.auth.getSession();
-      const tk = data.session?.access_token || "";
-      const res = await fetch("/api/admin/settings?type=analytics", { headers: { Authorization: `Bearer ${tk}` } });
-      if (res.ok) {
-        const d = await res.json();
-        setAnalytics(d);
-      }
+      cachedAdminFetch<Analytics>("/api/admin/settings?type=analytics").then((d) => setAnalytics(d));
     }
     init();
   }, [router]);
