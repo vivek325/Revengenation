@@ -178,11 +178,11 @@ export default function Home() {
   const getVoteState = (id: number): "up" | "down" | null =>
     upvoted.has(id) ? "up" : downvoted.has(id) ? "down" : null;
 
-  const handleDeletePost = async (postId: number) => {
-    await markPostDeleted(postId);
+  const handleDeletePost = (postId: number) => {
     setUserPosts((prev) => prev.filter((p) => p.id !== postId));
     setDeletedIds((prev) => [...prev, postId]);
     try { localStorage.removeItem("rn_posts_v3"); } catch {}
+    markPostDeleted(postId).catch(() => {});
   };
 
   const handleEditPost = (updated: Post) => {

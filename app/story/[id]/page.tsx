@@ -175,12 +175,11 @@ export default function StoryPage() {
     setEditOpen(false);
   };
 
-  const handleDeletePost = async () => {
+  const handleDeletePost = () => {
     if (!post) return;
     setDeleting(true);
-    await markPostDeleted(post.id);
-    setDeleting(false);
     setDeleteConfirm(false);
+    markPostDeleted(post.id).catch(() => {});
     router.push("/");
   };
 

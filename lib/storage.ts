@@ -177,9 +177,13 @@ export async function getDeletedPostIds(): Promise<number[]> {
 export async function markPostDeleted(postId: number): Promise<void> {
   bustCache("posts", "deleted", "comment_counts");
   try { localStorage.removeItem("rn_posts_v3"); } catch {}
-  try { await fetch("/api/feed", { method: "DELETE" }); } catch {}
-  await supabase.from("deleted_posts").upsert({ post_id: postId }, { onConflict: "post_id" });
-  await supabase.from("posts").delete().eq("id", postId);
+  // Bust Redis cache in background — don't block on it
+  fetch("/api/feed", { method: "DELETE" }).catch(() => {});
+  // Run both Supabase ops in parallel
+  await Promise.all([
+    supabase.from("deleted_posts").upsert({ post_id: postId }, { onConflict: "post_id" }),
+    supabase.from("posts").delete().eq("id", postId),
+  ]);
 }
 
 export async function updatePost(postId: number, fields: { title: string; content: string; full_story: string }): Promise<void> {

@@ -62,12 +62,11 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
     onEdit?.({ ...post, title: editTitle.trim(), content: editContent.trim(), fullStory: editFullStory.trim() });
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     setDeleting(true);
-    await markPostDeleted(post.id);
-    setDeleting(false);
     setDeleteConfirm(false);
     onDelete?.(post.id);
+    markPostDeleted(post.id).catch(() => {}).finally(() => setDeleting(false));
   }
 
   useEffect(() => {
