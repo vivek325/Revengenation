@@ -95,8 +95,8 @@ function LoginContent() {
     setLoading(true);
     const err = await login(loginEmail, loginPassword);
     if (err) { setError(err); setLoading(false); return; }
-    // Pre-warm session cache so navbar shows instantly on next page
-    await getSession().catch(() => {});
+    // Pre-warm cache in background — do NOT await, redirect immediately
+    getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 
@@ -118,8 +118,8 @@ function LoginContent() {
     setLoading(true);
     const err = await verifyOtp(loginEmail, otpCode);
     if (err) { setError(err); setLoading(false); return; }
-    // Pre-warm session cache so navbar shows instantly on next page
-    await getSession().catch(() => {});
+    // Pre-warm cache in background — do NOT await, redirect immediately
+    getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 
@@ -151,8 +151,8 @@ function LoginContent() {
     setLoading(true);
     const err = await completeSignup(email, username, password, avatarUrl || undefined, selectedEmoji || undefined);
     if (err) { setError(err); setLoading(false); return; }
-    // Pre-warm session cache so navbar shows instantly on next page
-    await getSession().catch(() => {});
+    // Pre-warm cache in background — do NOT await, redirect immediately
+    getSession().catch(() => {});
     window.location.href = redirectTo;
   };
 

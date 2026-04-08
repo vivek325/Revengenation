@@ -150,12 +150,18 @@ export async function completeSignup(
 /** Login with email + password. Returns error string on failure, null on success. */
 export async function login(email: string, password: string): Promise<string | null> {
   clearSessionCache();
-  const { error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  });
-  if (error) return "Invalid email or password.";
-  return null;
+  // 12 second timeout so spinner never hangs forever
+  const loginPromise = supabase.auth.signInWithPassword({ email: email.trim(), password });
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), 12000)
+  );
+  try {
+    const { error } = await Promise.race([loginPromise, timeoutPromise]);
+    if (error) return "Invalid email or password.";
+    return null;
+  } catch {
+    return "Login timed out. Please check your connection and try again.";
+  }
 }
 
 /** Send a 6-digit OTP to the given email. Returns error string or null. */
