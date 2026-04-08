@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getRedis } from "@/lib/redis";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -96,6 +97,8 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("posts").delete().eq("id", targetId);
       await supabaseAdmin.from("deleted_posts").upsert({ post_id: Number(targetId) }, { onConflict: "post_id" });
       await logAction(admin.id, admin.username, "delete_post", "post", targetId);
+      const redis = getRedis();
+      if (redis) { try { await redis.del("feed:v1"); } catch {} }
       return NextResponse.json({ success: true });
     }
     if (action === "toggle_pin") {

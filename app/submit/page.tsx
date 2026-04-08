@@ -142,7 +142,7 @@ function SubmitPageInner() {
       coverImage: mode === "blog" && coverImage ? coverImage : undefined,
     };
     injectPostIntoFeedCache(newPost);
-    saveUserAddedPost(newPost, currentUserId).catch(() => {});
+    saveUserAddedPost(newPost).catch(() => {});
     setLoading(false);
     setSubmitted(true);
   };

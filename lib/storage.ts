@@ -194,24 +194,25 @@ export function injectPostIntoFeedCache(post: Post): void {
   } catch {}
 }
 
-export async function saveUserAddedPost(post: Post, userId: string): Promise<void> {
+function _readToken(): string {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const ref = url.match(/https:\/\/([^.]+)/)?.[1] || "";
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`);
+    return raw ? (JSON.parse(raw).access_token || "") : "";
+  } catch { return ""; }
+}
+
+export async function saveUserAddedPost(post: Post): Promise<void> {
   bustCache("posts", "comment_counts");
-  await supabase.from("posts").insert({
-    id: post.id,
-    title: post.title,
-    content: post.content,
-    full_story: post.fullStory,
-    votes: post.votes,
-    author: post.author,
-    category: post.category,
-    type: post.type || "post",
-    image_url: post.imageUrl || null,
-    is_anonymous: post.author === "Anonymous",
-    created_at: post.createdAt,
-    user_id: userId || null,
+  const token = _readToken();
+  if (!token) return;
+  // Call server-side route so service role bypasses RLS and Redis is busted server-side
+  await fetch("/api/post", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(post),
   });
-  // Bust Redis feed cache in background — don't block on it
-  fetch("/api/feed", { method: "DELETE" }).catch(() => {});
 }
 
 export async function getDeletedPostIds(): Promise<number[]> {
