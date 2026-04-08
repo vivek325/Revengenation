@@ -1,6 +1,8 @@
 import type { Post } from "@/types";
 
-export const posts: Post[] = [
+export const posts: Post[] = [];
+
+const _unused = [
   {
     id: 1,
     title: "I trusted her with everything… until I saw the truth",
