@@ -126,10 +126,10 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
               </Link>
 
               {/* Profile dropdown */}
-              <div className="relative hidden sm:block" ref={dropdownRef}>
+              <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setProfileDropdown((v) => !v)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-[#111520] border border-slate-200 dark:border-[#1E2336] hover:border-slate-300 dark:hover:border-[#2E3450] hover:bg-white dark:hover:bg-[#161B2A] rounded-lg transition-all"
+                  className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-slate-50 dark:bg-[#111520] border border-slate-200 dark:border-[#1E2336] hover:border-slate-300 dark:hover:border-[#2E3450] hover:bg-white dark:hover:bg-[#161B2A] rounded-lg transition-all"
                 >
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E11D48] to-rose-700 flex items-center justify-center text-white text-[10px] font-black uppercase shrink-0 overflow-hidden">
                     {profile?.avatarUrl ? (
@@ -140,9 +140,9 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
                       user.username[0]
                     )}
                   </div>
-                  <span className="text-slate-600 dark:text-[#94A3B8] text-xs font-semibold max-w-[80px] truncate">{user.username}</span>
+                  <span className="hidden sm:inline text-slate-600 dark:text-[#94A3B8] text-xs font-semibold max-w-[80px] truncate">{user.username}</span>
                   {user.isAdmin && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 dark:bg-[#E11D48]/15 text-[#E11D48] border border-rose-200 dark:border-transparent">Admin</span>
+                    <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 dark:bg-[#E11D48]/15 text-[#E11D48] border border-rose-200 dark:border-transparent">Admin</span>
                   )}
                   <ChevronDown size={12} className={`text-slate-400 dark:text-[#475569] transition-transform duration-200 ${profileDropdown ? "rotate-180" : ""}`} />
                 </button>
