@@ -125,6 +125,13 @@ export async function getUserAddedPosts(): Promise<Post[]> {
   return (await fetchFeed()).posts;
 }
 
+// Synchronously get a post from the feed cache (no fullStory, but has title/content/votes)
+// Used by the story page to show something instantly while the full post loads
+export function getPostFromFeedCacheSync(id: number): Post | null {
+  if (!_feedCache) return null;
+  return _feedCache.data.posts.find((p) => p.id === id) ?? null;
+}
+
 // Fetch a single post WITH full_story — used only on the story detail page
 export async function getPostById(id: number): Promise<Post | null> {
   const cacheKey = `post:${id}`;
@@ -240,21 +247,31 @@ export async function getVoteAdjustments(): Promise<Record<number, number>> {
 }
 
 export async function getUpvotedPosts(userId: string): Promise<Set<number>> {
+  const cacheKey = `upvoted:${userId}`;
+  const cached = getCache<number[]>(cacheKey, 300_000);
+  if (cached) return new Set(cached);
   const { data } = await supabase
     .from("user_votes")
     .select("post_id")
     .eq("user_id", userId)
     .eq("direction", "up");
-  return new Set((data || []).map((r) => r.post_id));
+  const ids = (data || []).map((r) => r.post_id);
+  setCache(cacheKey, ids);
+  return new Set(ids);
 }
 
 export async function getDownvotedPosts(userId: string): Promise<Set<number>> {
+  const cacheKey = `downvoted:${userId}`;
+  const cached = getCache<number[]>(cacheKey, 300_000);
+  if (cached) return new Set(cached);
   const { data } = await supabase
     .from("user_votes")
     .select("post_id")
     .eq("user_id", userId)
     .eq("direction", "down");
-  return new Set((data || []).map((r) => r.post_id));
+  const ids = (data || []).map((r) => r.post_id);
+  setCache(cacheKey, ids);
+  return new Set(ids);
 }
 
 export async function castVote(
@@ -295,23 +312,29 @@ export async function castVote(
 // ── Comments ──────────────────────────────────────────────────────────────────
 
 export async function getComments(postId: number): Promise<Comment[]> {
+  const cacheKey = `comments:${postId}`;
+  const cached = getCache<Comment[]>(cacheKey, 120_000); // 2 min
+  if (cached) return cached;
   const { data } = await supabase
     .from("comments")
     .select("*")
     .eq("post_id", postId)
     .order("created_at", { ascending: false });
-
-  return (data || []).map((c) => ({
+  const result = (data || []).map((c) => ({
     id: c.id,
     postId: c.post_id,
     author: c.author,
     body: c.body,
     createdAt: c.created_at,
   }));
+  setCache(cacheKey, result);
+  return result;
 }
 
 export async function addComment(comment: Comment, userId: string): Promise<void> {
   bustCache("comment_counts");
+  // Invalidate comment cache for this post so next load is fresh
+  _cache.delete(`comments:${comment.postId}`);
   await supabase.from("comments").insert({
     id: comment.id,
     post_id: comment.postId,
@@ -389,13 +412,18 @@ export async function leaveCommunity(communityId: string, userId: string): Promi
 }
 
 export async function isMember(communityId: string, userId: string): Promise<boolean> {
+  const cacheKey = `ismember:${communityId}:${userId}`;
+  const cached = getCache<boolean>(cacheKey, 120_000);
+  if (cached !== null) return cached;
   const { data } = await supabase
     .from("community_members")
     .select("user_id")
     .eq("community_id", communityId)
     .eq("user_id", userId)
     .maybeSingle();
-  return !!data;
+  const result = !!data;
+  setCache(cacheKey, result);
+  return result;
 }
 
 export async function getMemberCount(communityId: string): Promise<number> {

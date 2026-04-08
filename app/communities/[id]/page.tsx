@@ -59,22 +59,40 @@ export default function CommunityPage() {
 
   useEffect(() => {
     async function load() {
-      setLoading(true);
+      // Try built-in first (instant, no network)
+      const builtin = BUILTIN.find((c) => c.id === id);
+      if (builtin) {
+        setCommunity(builtin);
+        setLoading(false);
+      }
 
-      // Start session + feed data in parallel while we resolve community
+      // Load all data in parallel — nothing blocks anything else
       const [adjRes, countsRes, userCommsRes] = await Promise.all([
         getVoteAdjustments(),
         getAllCommentCounts(),
         getUserCommunities(),
       ]);
 
-      // Confirm session in background (already set from sync)
+      setVoteAdjustments(adjRes);
+      setCommentCounts(countsRes);
+
+      // Resolve community
+      let comm: Community | null = builtin || userCommsRes.find((c) => c.id === id) || null;
+      if (!comm) { setLoading(false); return; }
+      setCommunity(comm);
+      setLoading(false);
+
+      // Posts + member count in parallel
+      getCommunityPosts(comm.name).then(setPosts);
+      getMemberCount(comm.id).then(setMemberCount);
+
+      // Session + member status in background (already have userId from sync)
       getSession().then((sessionRes) => {
         setUserId(sessionRes?.id || null);
         setUsername(sessionRes?.username || null);
-        if (sessionRes?.id && community) {
+        if (sessionRes?.id && comm) {
           Promise.all([
-            isMember(community.id, sessionRes.id),
+            isMember(comm.id, sessionRes.id),
             getUpvotedPosts(sessionRes.id),
             getDownvotedPosts(sessionRes.id),
           ]).then(([memberStatus, up, down]) => {
@@ -84,25 +102,6 @@ export default function CommunityPage() {
           });
         }
       });
-
-      // Try built-in first, then DB
-      let comm: Community | null = BUILTIN.find((c) => c.id === id) || null;
-      if (!comm) comm = userCommsRes.find((c) => c.id === id) || null;
-      if (!comm) { setLoading(false); return; }
-      setCommunity(comm);
-
-      setVoteAdjustments(adjRes);
-      setCommentCounts(countsRes);
-
-      // Fetch posts + member count in parallel
-      const [communityPosts, count] = await Promise.all([
-        getCommunityPosts(comm.name),
-        getMemberCount(comm.id),
-      ]);
-      setPosts(communityPosts);
-      setMemberCount(count);
-
-      setLoading(false);
     }
     load();
   }, [id]);

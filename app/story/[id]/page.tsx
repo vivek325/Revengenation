@@ -6,6 +6,7 @@ import Link from "next/link";
 import { posts as staticPosts } from "@/data/posts";
 import {
   getPostById,
+  getPostFromFeedCacheSync,
   getVoteAdjustments,
   getUpvotedPosts,
   getDownvotedPosts,
@@ -65,36 +66,42 @@ export default function StoryPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    async function init() {
-      const id = Number(params.id);
-      // Check static posts first (instant, no network)
-      const staticFound = staticPosts.find((p) => p.id === id);
+    const id = Number(params.id);
 
-      // Session already set from localStorage sync; confirm in background
-      getSession().then((session) => {
-        setCurrentUser(session?.username ?? null);
-        setCurrentUserId(session?.id ?? null);
-        if (session) {
-          Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
-            ([up, down]) => setVoteState(up.has(id) ? "up" : down.has(id) ? "down" : null)
-          );
-        }
-      });
-
-      const [found, deletedIds, adj, fetchedComments] = await Promise.all([
-        staticFound ? Promise.resolve(staticFound) : getPostById(id),
-        getDeletedPostIds(),
-        getVoteAdjustments(),
-        getComments(id),
-      ]);
-      if (!found || deletedIds.includes(id)) { router.push("/"); return; }
-
-      setPost(found);
-      setVotes(found.votes + (adj[found.id] || 0));
-      setComments(fetchedComments);
+    // Step 1: Show post IMMEDIATELY from feed cache (no network, no spinner)
+    const staticFound = staticPosts.find((p) => p.id === id);
+    const cachedPost = staticFound || getPostFromFeedCacheSync(id);
+    if (cachedPost) {
+      setPost(cachedPost);
+      setVotes(cachedPost.votes);
       setLoading(false);
     }
-    init();
+
+    // Step 2: Load full post (with fullStory) + vote adjustments + deleted check in parallel
+    Promise.all([
+      getPostById(id),
+      getDeletedPostIds(),
+      getVoteAdjustments(),
+    ]).then(([found, deletedIds, adj]) => {
+      if (!found || deletedIds.includes(id)) { router.push("/"); return; }
+      setPost(found);
+      setVotes(found.votes + (adj[found.id] || 0));
+      setLoading(false);
+    });
+
+    // Step 3: Load comments separately — doesn't block post rendering
+    getComments(id).then(setComments);
+
+    // Step 4: Session + user votes in background
+    getSession().then((session) => {
+      setCurrentUser(session?.username ?? null);
+      setCurrentUserId(session?.id ?? null);
+      if (session) {
+        Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
+          ([up, down]) => setVoteState(up.has(id) ? "up" : down.has(id) ? "down" : null)
+        );
+      }
+    });
   }, [params.id, router]);
 
   const sortedComments = [...comments].sort((a, b) =>
