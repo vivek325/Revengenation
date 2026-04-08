@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { saveUserAddedPost, getUserCommunities, injectPostIntoFeedCache } from "@/lib/storage";
+import { saveUserAddedPost, getUserCommunities, injectPostIntoFeedCache, bustFeedCache } from "@/lib/storage";
 import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post } from "@/types";
 
@@ -142,6 +142,7 @@ function SubmitPageInner() {
       coverImage: mode === "blog" && coverImage ? coverImage : undefined,
     };
     injectPostIntoFeedCache(newPost);
+    bustFeedCache(); // force home feed to re-fetch so new post appears instantly
     saveUserAddedPost(newPost).catch(() => {});
     setLoading(false);
     setSubmitted(true);

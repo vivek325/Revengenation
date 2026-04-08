@@ -5,6 +5,7 @@ import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { bustFeedCache } from "@/lib/storage";
 
 //  Types 
 
@@ -427,8 +428,9 @@ function Posts() {
 
   const act = async (action: string, id: number | string) => {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
-    // Broadcast delete to all open tabs (home feed removes it instantly)
+    // Bust feed cache (same-tab) and broadcast to all other tabs
     if (action === "delete") {
+      bustFeedCache();
       try { localStorage.setItem("rn_admin_deleted_post", String(id)); } catch {}
     }
     load(true);

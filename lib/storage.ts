@@ -101,7 +101,8 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
 
 async function fetchFeed(): Promise<FeedData> {
   if (_feedCache && Date.now() - _feedCache.at < FEED_BROWSER_TTL) {
-    return _feedCache.data;
+    // Always re-apply mergeJustSubmitted so a just-submitted post shows even on cache hit
+    return { ..._feedCache.data, posts: mergeJustSubmitted([..._feedCache.data.posts]) };
   }
   // Deduplicate: if a fetch is in-flight, reuse its promise
   if (_feedInFlight) return _feedInFlight;
