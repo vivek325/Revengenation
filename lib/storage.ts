@@ -150,6 +150,25 @@ export async function getPostById(id: number): Promise<Post | null> {
   }
 }
 
+// Optimistically inject a post into the in-memory + localStorage feed cache
+// so the home page shows it immediately without waiting for the DB round-trip
+export function injectPostIntoFeedCache(post: Post): void {
+  // Update in-memory feed cache
+  if (_feedCache) {
+    _feedCache.data.posts = [post, ..._feedCache.data.posts];
+  }
+  // Update localStorage feed cache
+  try {
+    const raw = localStorage.getItem("rn_posts_v3");
+    if (raw) {
+      const posts: Post[] = JSON.parse(raw);
+      localStorage.setItem("rn_posts_v3", JSON.stringify([post, ...posts]));
+    } else {
+      localStorage.removeItem("rn_posts_v3"); // force fresh fetch
+    }
+  } catch {}
+}
+
 export async function saveUserAddedPost(post: Post, userId: string): Promise<void> {
   bustCache("posts", "comment_counts");
   await supabase.from("posts").insert({

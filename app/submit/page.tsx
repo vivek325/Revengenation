@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { saveUserAddedPost, getUserCommunities } from "@/lib/storage";
+import { saveUserAddedPost, getUserCommunities, injectPostIntoFeedCache } from "@/lib/storage";
 import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post } from "@/types";
 
@@ -141,6 +141,7 @@ function SubmitPageInner() {
       imageUrl: mode === "post" && imagePreview ? imagePreview : undefined,
       coverImage: mode === "blog" && coverImage ? coverImage : undefined,
     };
+    injectPostIntoFeedCache(newPost);
     saveUserAddedPost(newPost, currentUserId).catch(() => {});
     setLoading(false);
     setSubmitted(true);
