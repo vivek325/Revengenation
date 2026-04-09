@@ -110,7 +110,8 @@ function mergeStaticPosts(data: FeedData): FeedData {
 
 async function fetchFeed(): Promise<FeedData> {
   if (_feedCache && Date.now() - _feedCache.at < FEED_BROWSER_TTL) {
-    // Always re-apply mergeJustSubmitted so a just-submitted post shows even on cache hit
+    // Apply mergeJustSubmitted on top of RAW cached data (not stored back into cache)
+    // so rn_just_submitted is only cleared when a post truly comes from the server
     return { ..._feedCache.data, posts: mergeJustSubmitted([..._feedCache.data.posts]) };
   }
   // Deduplicate: if a fetch is in-flight, reuse its promise
@@ -122,15 +123,15 @@ async function fetchFeed(): Promise<FeedData> {
       if (!res.ok) throw new Error(`feed ${res.status}`);
       let data: FeedData = await res.json();
       data = mergeStaticPosts(data);
-      data.posts = mergeJustSubmitted(data.posts);
+      // Store RAW server data in cache (without just-submitted posts merged in)
+      // so that cache-hit mergeJustSubmitted correctly detects when posts appear naturally
       _feedCache = { data, at: Date.now() };
-      return data;
+      return { ...data, posts: mergeJustSubmitted([...data.posts]) };
     } catch {
       let data = await fetchFeedFromSupabase();
       data = mergeStaticPosts(data);
-      data.posts = mergeJustSubmitted(data.posts);
       _feedCache = { data, at: Date.now() };
-      return data;
+      return { ...data, posts: mergeJustSubmitted([...data.posts]) };
     } finally {
       _feedInFlight = null;
     }
