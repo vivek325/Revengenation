@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import ClientShell from "@/components/ClientShell";
 
@@ -14,11 +15,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <head>
-        {/* Prevent flash of wrong theme before React hydrates */}
-        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('rn-theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
-      </head>
+      <head />
       <body className="min-h-full bg-[#F1F5F9] dark:bg-[#07090F] transition-colors duration-200">
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('rn-theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }}
+        />
         <ClientShell>{children}</ClientShell>
       </body>
     </html>

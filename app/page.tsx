@@ -113,9 +113,16 @@ export default function Home() {
     // Listen for cross-tab admin deletes — remove post from feed instantly
     const onStorage = (e: StorageEvent) => {
       if (e.key === "rn_admin_deleted_post" && e.newValue) {
-        const id = Number(e.newValue);
+        const id = Number(e.newValue.split(":")[0]);
         bustFeedCache();
+        // Remove from userPosts state directly so the memo instantly excludes it
+        setUserPosts((prev) => prev.filter((p) => p.id !== id));
         setDeletedIds((prev) => prev.includes(id) ? prev : [...prev, id]);
+        // Refresh userPosts from server in background so stale cache is gone
+        getUserAddedPosts().then((posts) => {
+          setUserPosts(posts);
+          try { localStorage.setItem("rn_posts_v3", JSON.stringify(posts)); } catch {}
+        });
       }
     };
     window.addEventListener("storage", onStorage);

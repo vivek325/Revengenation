@@ -438,8 +438,9 @@ function Posts() {
           localStorage.setItem("rn_posts_v3", JSON.stringify(filtered));
         }
       } catch {}
-      // Signal other tabs
-      try { localStorage.setItem("rn_admin_deleted_post", String(id)); } catch {}
+      // Signal other tabs — append timestamp so the storage event always fires
+      // even if the same post id was previously stored
+      try { localStorage.setItem("rn_admin_deleted_post", `${String(id)}:${Date.now()}`); } catch {}
     }
     load(true);
   };
