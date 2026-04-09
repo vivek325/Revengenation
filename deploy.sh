@@ -7,7 +7,7 @@ echo "==============================="
 
 # 1. Latest code pull karo
 echo "[1/5] Pulling latest code from Git..."
-git pull origin main
+git pull origin master
 
 # 2. Dependencies install karo
 echo "[2/5] Installing dependencies..."
