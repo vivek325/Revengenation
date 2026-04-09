@@ -5,7 +5,7 @@ import RNLoader from "@/components/RNLoader";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { bustFeedCache } from "@/lib/storage";
+import { bustFeedCache, removePostFromFeedCache } from "@/lib/storage";
 
 //  Types 
 
@@ -430,14 +430,8 @@ function Posts() {
     await adminFetch("/api/admin/content", { method: "POST", body: JSON.stringify({ action, targetType: "post", targetId: String(id) }) });
     if (action === "delete") {
       bustFeedCache();
-      // Remove from rn_posts_v3 cache so home page instant-render doesn't show deleted post
-      try {
-        const raw = localStorage.getItem("rn_posts_v3");
-        if (raw) {
-          const filtered = (JSON.parse(raw) as { id: number }[]).filter((p) => p.id !== Number(id));
-          localStorage.setItem("rn_posts_v3", JSON.stringify(filtered));
-        }
-      } catch {}
+      // Remove from all local caches (rn_just_submitted + rn_posts_v3)
+      removePostFromFeedCache(Number(id));
       // Signal other tabs — append timestamp so the storage event always fires
       // even if the same post id was previously stored
       try { localStorage.setItem("rn_admin_deleted_post", `${String(id)}:${Date.now()}`); } catch {}

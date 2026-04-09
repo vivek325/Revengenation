@@ -16,6 +16,7 @@ import {
   markPostDeleted,
   updatePost,
   bustFeedCache,
+  removePostFromFeedCache,
 } from "@/lib/storage";
 import { getSession, getSessionSync } from "@/lib/auth";
 import type { Post, Community } from "@/types";
@@ -115,6 +116,8 @@ export default function Home() {
       if (e.key === "rn_admin_deleted_post" && e.newValue) {
         const id = Number(e.newValue.split(":")[0]);
         bustFeedCache();
+        // Remove from all local caches (rn_just_submitted + rn_posts_v3)
+        removePostFromFeedCache(id);
         // Remove from userPosts state directly so the memo instantly excludes it
         setUserPosts((prev) => prev.filter((p) => p.id !== id));
         setDeletedIds((prev) => prev.includes(id) ? prev : [...prev, id]);

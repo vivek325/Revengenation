@@ -227,6 +227,29 @@ export function injectPostIntoFeedCache(post: Post): void {
   } catch {}
 }
 
+// Remove a post from all local caches — call on admin delete so it doesn't
+// get re-injected back into the feed via rn_just_submitted after Redis bust
+export function removePostFromFeedCache(postId: number): void {
+  try {
+    if (typeof window === "undefined") return;
+    // Remove from rn_just_submitted array
+    const raw = localStorage.getItem("rn_just_submitted");
+    if (raw) {
+      const existing = JSON.parse(raw) as { post: Post; at: number } | Array<{ post: Post; at: number }>;
+      const entries = Array.isArray(existing) ? existing : [existing];
+      const updated = entries.filter((e) => e.post.id !== postId);
+      if (updated.length === 0) localStorage.removeItem("rn_just_submitted");
+      else localStorage.setItem("rn_just_submitted", JSON.stringify(updated));
+    }
+    // Remove from rn_posts_v3 instant-render cache
+    const raw3 = localStorage.getItem("rn_posts_v3");
+    if (raw3) {
+      const filtered = (JSON.parse(raw3) as { id: number }[]).filter((p) => p.id !== postId);
+      localStorage.setItem("rn_posts_v3", JSON.stringify(filtered));
+    }
+  } catch {}
+}
+
 function _readToken(): string {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
