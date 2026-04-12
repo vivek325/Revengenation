@@ -72,6 +72,17 @@ create table if not exists public.deleted_posts (
   post_id bigint primary key
 );
 
+-- OTP codes for email verification (signup/login)
+create table if not exists public.otp_codes (
+  email text primary key,
+  code text not null,
+  expires_at timestamptz not null,
+  attempts int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists otp_codes_expires_at_idx on public.otp_codes(expires_at);
+
 -- ================================================================
 -- Row Level Security
 -- ================================================================
@@ -82,6 +93,7 @@ alter table public.communities enable row level security;
 alter table public.user_votes enable row level security;
 alter table public.vote_adjustments enable row level security;
 alter table public.deleted_posts enable row level security;
+alter table public.otp_codes enable row level security;
 
 -- Profiles
 create policy "profiles_select" on public.profiles for select using (true);
