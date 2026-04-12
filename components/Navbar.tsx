@@ -171,9 +171,9 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
             </>
           ) : (
             <>
-              <Link href="/login" className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-[#64748B] hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#161B2A] transition-colors">
+              <Link href="/login" className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-[#64748B] hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#161B2A] transition-colors">
                 <LogIn size={16} />
-                Log In
+                <span className="hidden sm:inline">Log In</span>
               </Link>
               <Link href="/login?mode=signup" className="flex items-center gap-1.5 px-4 py-2 bg-[#E11D48] hover:bg-rose-700 text-white text-sm font-bold rounded-lg transition-all shadow-sm shadow-rose-200 dark:shadow-rose-900/20">
                 <UserPlus size={16} />

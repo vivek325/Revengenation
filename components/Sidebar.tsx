@@ -6,7 +6,7 @@ import { useState, useEffect, Suspense } from "react";
 import {
   Home, ShieldCheck, ChevronDown, ChevronUp, PlusCircle,
   BarChart2, Users, LayoutGrid, FileText, MessageSquare,
-  Flag, Tag, Megaphone, Settings, ShieldAlert, LogIn, UserPlus, User, LogOut,
+  Flag, Tag, Megaphone, Settings, ShieldAlert, User, LogOut,
 } from "lucide-react";
 import { getSession, logout, getSessionSync } from "@/lib/auth";
 import { getUserCommunities } from "@/lib/storage";
@@ -190,21 +190,47 @@ function SidebarInner({ open, onClose }: SidebarProps) {
             </button>
           </>
         )}
-        {mounted && !user && (
-          <>
-            <Link href="/login" onClick={onClose} className={navLinkClass(isActive("/login"))}>
-              <LogIn size={16} className={iconClass(isActive("/login"))} />
-              Log In
-            </Link>
-            <Link href="/login?mode=signup" onClick={onClose} className={navLinkClass(false)}>
-              <UserPlus size={16} className="text-slate-400 dark:text-[#475569] shrink-0" />
-              Sign Up
-            </Link>
-          </>
-        )}
+
       </div>
 
-      <div className="px-4 py-4 border-t border-slate-100 dark:border-[#1C2035] shrink-0">
+      <div className="px-4 py-4 border-t border-slate-100 dark:border-[#1C2035] shrink-0 space-y-1.5">
+        {/* Row 1 */}
+        <div className="flex items-center justify-center gap-2">
+          {[
+            { href: "/privacy", label: "Privacy Policy" },
+            { href: "/about", label: "About" },
+            { href: "/disclaimer", label: "Disclaimer" },
+          ].map((link, i, arr) => (
+            <span key={link.href} className="flex items-center gap-2">
+              <Link
+                href={link.href}
+                onClick={onClose}
+                className="text-[11px] font-semibold text-slate-500 dark:text-[#475569] hover:text-[#E11D48] dark:hover:text-[#E11D48] transition-colors whitespace-nowrap"
+              >
+                {link.label}
+              </Link>
+              {i < arr.length - 1 && <span className="text-slate-300 dark:text-[#2A3040] text-[10px]">·</span>}
+            </span>
+          ))}
+        </div>
+        {/* Row 2 */}
+        <div className="flex items-center justify-center gap-2">
+          {[
+            { href: "/terms", label: "Terms & Conditions" },
+            { href: "/contact", label: "Contact Us" },
+          ].map((link, i, arr) => (
+            <span key={link.href} className="flex items-center gap-2">
+              <Link
+                href={link.href}
+                onClick={onClose}
+                className="text-[11px] font-semibold text-slate-500 dark:text-[#475569] hover:text-[#E11D48] dark:hover:text-[#E11D48] transition-colors whitespace-nowrap"
+              >
+                {link.label}
+              </Link>
+              {i < arr.length - 1 && <span className="text-slate-300 dark:text-[#2A3040] text-[10px]">·</span>}
+            </span>
+          ))}
+        </div>
         <p className="text-slate-300 dark:text-[#1E2A3A] text-xs text-center">RevengeNation © 2026</p>
       </div>
     </aside>
