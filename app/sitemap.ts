@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { supabase } from "@/lib/supabase";
+import { storyUrl } from "@/lib/utils";
 
 const BASE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || "https://revengenationstories.com"
@@ -67,14 +68,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic story pages — visible (not hidden, not NSFW)
   const { data: posts } = await supabase
     .from("posts")
-    .select("id, created_at")
+    .select("id, title, created_at")
     .eq("is_hidden", false)
     .eq("is_nsfw", false)
     .order("created_at", { ascending: false })
     .limit(5000);
 
   const storyRoutes: MetadataRoute.Sitemap = (posts ?? []).map((post) => ({
-    url: `${BASE_URL}/story/${post.id}`,
+    url: BASE_URL + storyUrl(post.id, post.title),
     lastModified: new Date(post.created_at),
     changeFrequency: "weekly",
     priority: 0.8,

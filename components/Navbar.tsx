@@ -70,9 +70,11 @@ export default function Navbar({ onToggleSidebar, sidebarOpen, isDark, onToggleT
   useEffect(() => { setProfileDropdown(false); }, [pathname]);
 
   const handleLogout = async () => {
-    await logout();
-    setUser(null); setProfile(null); setProfileDropdown(false);
-    window.location.href = "/";
+    setProfileDropdown(false);
+    setUser(null);
+    setProfile(null);
+    try { await logout(); } catch {}
+    window.location.replace("/");
   };
 
   return (

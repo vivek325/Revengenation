@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { bustFeedCache, removePostFromFeedCache } from "@/lib/storage";
+import { storyUrl } from "@/lib/utils";
 
 //  Types 
 
@@ -441,7 +442,10 @@ function Posts() {
 
   return (
     <div>
-      <SectionHeader title="Post Moderation" subtitle="Manage all posts across the platform" />
+      <div className="flex items-center justify-between mb-4">
+        <SectionHeader title="Post Moderation" subtitle="Manage all posts across the platform" />
+        <Link href="/admin/new" className="px-4 py-2 bg-[#E11D48] hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors">+ New Post</Link>
+      </div>
       {loading ? <div className="text-[#818384] text-sm py-8 text-center">Loading...</div> : (
         <div className="bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] rounded-[4px] divide-y divide-slate-200 dark:divide-[#343536]">
           {posts.length === 0 && <div className="py-10 text-center text-[#818384] text-sm">No posts</div>}
@@ -453,7 +457,7 @@ function Posts() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Link href={`/story/${p.id}`} className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium hover:underline">{p.title}</Link>
+                  <Link href={storyUrl(p.id, p.title)} className="text-slate-900 dark:text-[#D7DADC] text-sm font-medium hover:underline">{p.title}</Link>
                   {p.is_pinned && <Badge color="green"> Pinned</Badge>}
                   {p.is_locked && <Badge color="yellow"> Locked</Badge>}
                   {p.is_nsfw && <Badge color="red">NSFW</Badge>}
@@ -467,6 +471,7 @@ function Posts() {
                 <ActionBtn color={p.is_nsfw ? "gray" : "red"} onClick={() => act("toggle_nsfw", p.id)}>{p.is_nsfw ? "Un-NSFW" : "NSFW"}</ActionBtn>
                 <ActionBtn color={p.is_hidden ? "blue" : "gray"} onClick={() => act("toggle_hide", p.id)}>{p.is_hidden ? "Unhide" : "Hide"}</ActionBtn>
                 <ActionBtn color="red" onClick={() => { if (confirm("Delete this post?")) act("delete", p.id); }}>Delete</ActionBtn>
+                <Link href={`/admin/edit/${p.id}`} className="text-xs px-2.5 py-1 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 rounded transition-colors font-semibold">Edit</Link>
               </div>
             </div>
           ))}

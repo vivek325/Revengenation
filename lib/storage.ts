@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import type { Post, Comment, Community } from "@/types";
 import { posts as _staticPosts } from "@/data/posts";
+import { slugify } from "./utils";
 
 // ── In-memory browser cache (per-session fallback) ──────────────────────────
 const _cache = new Map<string, { value: unknown; at: number }>();
@@ -76,6 +77,8 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
       type: p.type as "post" | "story",
       imageUrl: p.image_url ?? undefined,
       createdAt: p.created_at,
+      metaDescription: p.meta_description ?? undefined,
+      tags: p.tags ?? undefined,
     };
   });
 
@@ -152,6 +155,39 @@ export function getPostFromFeedCacheSync(id: number): Post | null {
   return _feedCache.data.posts.find((p) => p.id === id) ?? null;
 }
 
+// Synchronously find a post by title slug from the feed cache
+export function getPostFromFeedCacheBySlug(slug: string): Post | null {
+  if (!_feedCache) return null;
+  return _feedCache.data.posts.find((p) => slugify(p.title) === slug) ?? null;
+}
+
+// Find a post by its title slug — used for clean /story/my-title URLs
+export async function getPostBySlug(slug: string): Promise<Post | null> {
+  // 1. Static posts
+  const staticMatch = _staticPosts.find((p) => slugify(p.title) === slug);
+  if (staticMatch) return staticMatch;
+
+  // 2. Feed cache (already loaded)
+  const cacheHit = getPostFromFeedCacheBySlug(slug);
+  if (cacheHit) return getPostById(cacheHit.id);
+
+  // 3. Populate feed cache then retry
+  try {
+    await fetchFeed();
+    const cacheHit2 = getPostFromFeedCacheBySlug(slug);
+    if (cacheHit2) return getPostById(cacheHit2.id);
+  } catch { /* fall through */ }
+
+  // 4. Direct Supabase scan as last resort
+  try {
+    const { data } = await supabase.from("posts").select("id, title").limit(5000);
+    const match = (data ?? []).find((p) => slugify(p.title) === slug);
+    if (match) return getPostById(match.id);
+  } catch { /* fall through */ }
+
+  return null;
+}
+
 // Fetch a single post WITH full_story — used only on the story detail page
 export async function getPostById(id: number): Promise<Post | null> {
   // Static posts live only in data/posts.ts — no DB lookup needed
@@ -177,6 +213,7 @@ export async function getPostById(id: number): Promise<Post | null> {
       fullStory: data.full_story, votes: data.votes, author: data.author,
       category: data.category, type: data.type as "post" | "story",
       imageUrl: data.image_url ?? undefined, createdAt: data.created_at,
+      metaDescription: data.meta_description ?? undefined, tags: data.tags ?? undefined,
     };
     setCache(cacheKey, post);
     return post;

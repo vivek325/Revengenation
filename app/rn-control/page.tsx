@@ -14,6 +14,7 @@ import {
   markPostRestored,
 } from "@/lib/storage";
 import { getSession } from "@/lib/auth";
+import { storyUrl } from "@/lib/utils";
 import type { Post } from "@/types";
 
 const CATEGORIES = [
@@ -178,7 +179,7 @@ export default function Admin() {
         {topPost && (
           <div className="bg-slate-50 dark:bg-[#272729] border border-[#FF4500]/30 rounded-[4px] p-4 mb-5">
             <div className="text-xs text-[#FF4500] font-bold uppercase tracking-widest mb-2">🏆 Top Post</div>
-            <Link href={`/story/${topPost.id}`} className="text-slate-900 dark:text-[#D7DADC] font-semibold dark:hover:text-white hover:text-slate-800 hover:underline block text-sm mb-1">
+            <Link href={storyUrl(topPost.id, topPost.title)} className="text-slate-900 dark:text-[#D7DADC] font-semibold dark:hover:text-white hover:text-slate-800 hover:underline block text-sm mb-1">
               {topPost.title}
             </Link>
             <div className="text-[#818384] text-xs">
@@ -232,7 +233,7 @@ export default function Admin() {
                   {/* Actions */}
                   <div className="flex gap-2 shrink-0">
                     <Link
-                      href={`/story/${post.id}`}
+                      href={storyUrl(post.id, post.title)}
                       className="text-xs px-3 py-1.5 bg-white dark:bg-[#1A1A1B] border border-slate-200 dark:border-[#343536] hover:border-[#818384] text-[#818384] hover:text-slate-900 dark:text-[#D7DADC] rounded transition-colors"
                     >
                       View

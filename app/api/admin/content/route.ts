@@ -129,6 +129,25 @@ export async function POST(req: NextRequest) {
       await logAction(admin.id, admin.username, newVal ? "hide_post" : "unhide_post", "post", targetId);
       return NextResponse.json({ success: true, hidden: newVal });
     }
+    if (action === "update_post") {
+      const { title, content, full_story, author, category, type, meta_description, tags } = body;
+      const updateData: Record<string, unknown> = {};
+      if (title !== undefined) updateData.title = title;
+      if (content !== undefined) updateData.content = content;
+      if (full_story !== undefined) updateData.full_story = full_story;
+      if (author !== undefined) updateData.author = author;
+      if (category !== undefined) updateData.category = category;
+      if (type !== undefined) updateData.type = type;
+      if (meta_description !== undefined) updateData.meta_description = meta_description || null;
+      if (tags !== undefined) updateData.tags = tags || null;
+      const { error } = await supabaseAdmin.from("posts").update(updateData).eq("id", targetId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      // Bust caches
+      const redis = getRedis();
+      if (redis) { try { await Promise.all([redis.del("feed:v1"), redis.del(`post:${targetId}`)]); } catch {} }
+      await logAction(admin.id, admin.username, "edit_post", "post", String(targetId));
+      return NextResponse.json({ success: true });
+    }
   }
 
   // Comment actions

@@ -29,6 +29,8 @@ export async function POST(req: NextRequest) {
     is_anonymous: post.author === "Anonymous",
     created_at: post.createdAt,
     user_id: user.id,
+    meta_description: post.metaDescription || null,
+    tags: post.tags || null,
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

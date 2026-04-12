@@ -53,6 +53,8 @@ export async function GET(
     type: data.type as "post" | "story",
     imageUrl: data.image_url ?? undefined,
     createdAt: data.created_at,
+    metaDescription: data.meta_description ?? undefined,
+    tags: data.tags ?? undefined,
   };
 
   if (redis) {

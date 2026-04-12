@@ -1,12 +1,15 @@
 ﻿"use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Head from "next/head";
 import Link from "next/link";
 import { posts as staticPosts } from "@/data/posts";
 import {
   getPostById,
+  getPostBySlug,
   getPostFromFeedCacheSync,
+  getPostFromFeedCacheBySlug,
   getVoteAdjustments,
   getUpvotedPosts,
   getDownvotedPosts,
@@ -20,7 +23,9 @@ import {
 } from "@/lib/storage";
 import { getSession, getSessionSync } from "@/lib/auth";
 import RNLoader from "@/components/RNLoader";
+import RichTextareaToolbar from "@/components/RichTextareaToolbar";
 import type { Post, Comment } from "@/types";
+import { slugify, storyUrl } from "@/lib/utils";
 
 const FLAIR_COLORS: Record<string, string> = {
   Betrayal: "#FF6314",
@@ -64,46 +69,67 @@ export default function StoryPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editContentRef = useRef<HTMLTextAreaElement>(null);
+  const editFullStoryRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const id = Number(params.id);
+    const param = params.id as string;
+    const isNumericId = /^\d+$/.test(param);
 
-    // Step 1: Show post IMMEDIATELY from feed cache (no network, no spinner)
-    const staticFound = staticPosts.find((p) => p.id === id);
-    const cachedPost = staticFound || getPostFromFeedCacheSync(id);
-    if (cachedPost) {
-      setPost(cachedPost);
-      setVotes(cachedPost.votes);
-      setLoading(false);
+    if (isNumericId) {
+      // ── Legacy URL: /story/1234567890 ──────────────────────────────────────
+      const id = Number(param);
+      const staticFound = staticPosts.find((p) => p.id === id);
+      const cachedPost = staticFound || getPostFromFeedCacheSync(id);
+      if (cachedPost) { setPost(cachedPost); setVotes(cachedPost.votes); setLoading(false); }
+
+      Promise.all([getPostById(id), getDeletedPostIds(), getVoteAdjustments()]).then(
+        ([found, deletedIds, adj]) => {
+          const resolved = found ?? cachedPost;
+          if (!resolved || deletedIds.includes(id)) { router.push("/"); return; }
+          setPost(resolved);
+          setVotes(resolved.votes + (adj[resolved.id] || 0));
+          setLoading(false);
+        }
+      );
+      getComments(id).then(setComments);
+      getSession().then((session) => {
+        setCurrentUser(session?.username ?? null);
+        setCurrentUserId(session?.id ?? null);
+        if (session) {
+          Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
+            ([up, down]) => setVoteState(up.has(id) ? "up" : down.has(id) ? "down" : null)
+          );
+        }
+      });
+    } else {
+      // ── Clean URL: /story/my-post-title ────────────────────────────────────
+      const slug = param;
+      const staticFound = staticPosts.find((p) => slugify(p.title) === slug);
+      const cachedPost = staticFound || getPostFromFeedCacheBySlug(slug);
+      if (cachedPost) { setPost(cachedPost); setVotes(cachedPost.votes); setLoading(false); }
+
+      Promise.all([getPostBySlug(slug), getDeletedPostIds(), getVoteAdjustments()]).then(
+        ([found, deletedIds, adj]) => {
+          const resolved = found ?? cachedPost;
+          if (!resolved || deletedIds.includes(resolved.id)) { router.push("/"); return; }
+          setPost(resolved);
+          setVotes(resolved.votes + (adj[resolved.id] || 0));
+          setLoading(false);
+          // Load comments + session after ID is resolved
+          getComments(resolved.id).then(setComments);
+          getSession().then((session) => {
+            setCurrentUser(session?.username ?? null);
+            setCurrentUserId(session?.id ?? null);
+            if (session) {
+              Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
+                ([up, down]) => setVoteState(up.has(resolved.id) ? "up" : down.has(resolved.id) ? "down" : null)
+              );
+            }
+          });
+        }
+      );
     }
-
-    // Step 2: Load full post (with fullStory) + vote adjustments + deleted check in parallel
-    Promise.all([
-      getPostById(id),
-      getDeletedPostIds(),
-      getVoteAdjustments(),
-    ]).then(([found, deletedIds, adj]) => {
-      // Use DB result; fall back to static/feed cache if DB returns null (static posts aren't in DB)
-      const resolved = found ?? cachedPost;
-      if (!resolved || deletedIds.includes(id)) { router.push("/"); return; }
-      setPost(resolved);
-      setVotes(resolved.votes + (adj[resolved.id] || 0));
-      setLoading(false);
-    });
-
-    // Step 3: Load comments separately — doesn't block post rendering
-    getComments(id).then(setComments);
-
-    // Step 4: Session + user votes in background
-    getSession().then((session) => {
-      setCurrentUser(session?.username ?? null);
-      setCurrentUserId(session?.id ?? null);
-      if (session) {
-        Promise.all([getUpvotedPosts(session.id), getDownvotedPosts(session.id)]).then(
-          ([up, down]) => setVoteState(up.has(id) ? "up" : down.has(id) ? "down" : null)
-        );
-      }
-    });
   }, [params.id, router]);
 
   const sortedComments = [...comments].sort((a, b) =>
@@ -111,6 +137,26 @@ export default function StoryPage() {
       ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       : 0
   );
+
+  /** Render plain text with [text](url) markdown links as clickable <a> tags. */
+  function renderWithLinks(text: string): ReactNode {
+    const regex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(text)) !== null) {
+      if (m.index > last) parts.push(text.slice(last, m.index));
+      parts.push(
+        <a key={m.index} href={m[2]} target="_blank" rel="noopener noreferrer"
+          className="text-[#E11D48] underline underline-offset-2 hover:text-rose-400 transition-colors">
+          {m[1]}
+        </a>
+      );
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    return parts.length > 1 ? <>{parts}</> : text;
+  }
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,7 +191,7 @@ export default function StoryPage() {
   const handleVote = async (dir: "up" | "down") => {
     if (!post) return;
     if (!currentUserId) {
-      router.push(`/login?redirect=/story/${post.id}`);
+      router.push(`/login?redirect=${storyUrl(post.id, post.title)}`);
       return;
     }
     const isUp = voteState === "up";
@@ -210,8 +256,24 @@ export default function StoryPage() {
   const voteColor =
     voteState === "up" ? "#E11D48" : voteState === "down" ? "#7C3AED" : "#64748B";
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://revengenation.com";
+  const canonicalUrl = `${siteUrl}${storyUrl(post.id, post.title)}`;
+  const metaDesc = post.metaDescription || post.content || "";
+
   return (
     <div className="min-h-screen">
+      <Head>
+        <title>{post.title} | RevengeNation</title>
+        <meta name="description" content={metaDesc} />
+        <link rel="canonical" href={canonicalUrl} />
+        <meta property="og:title" content={`${post.title} | RevengeNation`} />
+        <meta property="og:description" content={metaDesc} />
+        <meta property="og:url" content={canonicalUrl} />
+        {post.imageUrl && <meta property="og:image" content={post.imageUrl} />}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={post.title} />
+        <meta name="twitter:description" content={metaDesc} />
+      </Head>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
@@ -277,13 +339,13 @@ export default function StoryPage() {
                   </div>
                 )}
                 {post.fullStory.split("\n\n").map((para, i) => (
-                  <p key={i} className="text-slate-600 dark:text-[#CBD5E1] leading-8">{para}</p>
+                  <p key={i} className="text-slate-600 dark:text-[#CBD5E1] leading-8">{renderWithLinks(para)}</p>
                 ))}
               </div>
             ) : (
             <div className="text-[#94A3B8] text-sm leading-7 space-y-4">
               {post.fullStory.split("\n\n").map((para, i) => (
-                <p key={i}>{para}</p>
+                <p key={i}>{renderWithLinks(para)}</p>
               ))}
             </div>
             )}
@@ -400,7 +462,9 @@ export default function StoryPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Summary</label>
+                  <RichTextareaToolbar textareaRef={editContentRef} value={editContent} onChange={setEditContent} />
                   <textarea
+                    ref={editContentRef}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     rows={3}
@@ -411,7 +475,9 @@ export default function StoryPage() {
                 {post && post.type !== "post" && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 dark:text-[#64748B] uppercase tracking-wider mb-1.5">Full Story</label>
+                    <RichTextareaToolbar textareaRef={editFullStoryRef} value={editFullStory} onChange={setEditFullStory} />
                     <textarea
+                      ref={editFullStoryRef}
                       value={editFullStory}
                       onChange={(e) => setEditFullStory(e.target.value)}
                       rows={10}
@@ -466,13 +532,13 @@ export default function StoryPage() {
                 <p className="text-[#64748B] text-sm">Log in to join the conversation 💬</p>
                 <div className="flex items-center gap-2">
                   <a
-                    href={`/login?redirect=/story/${post?.id}`}
+                    href={`/login?redirect=${storyUrl(post.id, post.title)}`}
                     className="px-4 py-2 bg-[#E11D48] hover:bg-[#BE1239] text-white text-xs font-bold rounded-lg transition-colors"
                   >
                     Log In
                   </a>
                   <a
-                    href={`/login?mode=signup&redirect=/story/${post?.id}`}
+                    href={`/login?mode=signup&redirect=${storyUrl(post.id, post.title)}`}
                     className="px-4 py-2 border border-slate-300 dark:border-[#2A2A3E] hover:bg-slate-100 dark:bg-[#1A1A28] text-[#94A3B8] dark:hover:text-white hover:text-slate-800 text-xs font-bold rounded-lg transition-colors"
                   >
                     Sign Up

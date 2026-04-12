@@ -5,6 +5,7 @@ import RNLoader from "@/components/RNLoader";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession, getSessionSync } from "@/lib/auth";
+import { storyUrl } from "@/lib/utils";
 import {
   getUserAddedPosts,
   getAllComments,
@@ -303,7 +304,7 @@ export default function ProfilePage() {
 function PostRow({ post, dimmed }: { post: Post; dimmed?: boolean }) {
   return (
     <Link
-      href={`/story/${post.id}`}
+      href={storyUrl(post.id, post.title)}
       className={`block bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-xl p-4 transition-colors ${dimmed ? "opacity-75" : ""}`}
     >
       <div className="flex items-start gap-3">
@@ -332,7 +333,7 @@ function CommentRow({ comment, allPosts }: { comment: Comment; allPosts: Post[] 
   const post = allPosts.find((p) => p.id === comment.postId);
   return (
     <Link
-      href={`/story/${comment.postId}#comments`}
+      href={(post ? storyUrl(post.id, post.title) : `/story/${comment.postId}`) + "#comments"}
       className="block bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] rounded-xl p-4 transition-colors"
     >
       {post && <p className="text-[#475569] text-xs mb-1.5 truncate">on: {post.title}</p>}

@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import RNLoader from "@/components/RNLoader";
+import RichTextareaToolbar from "@/components/RichTextareaToolbar";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { saveUserAddedPost, getUserCommunities, injectPostIntoFeedCache, bustFeedCache } from "@/lib/storage";
@@ -62,6 +63,8 @@ function SubmitPageInner() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [ownedCommunityNames, setOwnedCommunityNames] = useState<Set<string>>(new Set());
   const [postAsCommunity, setPostAsCommunity] = useState(false);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const fullStoryRef = useRef<HTMLTextAreaElement>(null);
   const [allCommunityNames, setAllCommunityNames] = useState<Set<string>>(new Set());
   const [communityMeta, setCommunityMeta] = useState<Record<string, { emoji: string; color: string }>>({});
 
@@ -305,7 +308,9 @@ function SubmitPageInner() {
                 {/* Post mode — body text + optional image */}
                 {mode === "post" && (
                   <div className="space-y-3">
+                    <RichTextareaToolbar textareaRef={contentRef} value={form.content} onChange={(v) => update("content", v)} />
                     <textarea
+                      ref={contentRef}
                       rows={5}
                       value={form.content}
                       onChange={(e) => update("content", e.target.value)}
@@ -376,7 +381,9 @@ function SubmitPageInner() {
                         <input type="file" accept="image/*" className="hidden" onChange={handleCoverImage} />
                       </label>
                     )}
+                    <RichTextareaToolbar textareaRef={fullStoryRef} value={form.fullStory} onChange={(v) => update("fullStory", v)} />
                     <textarea
+                      ref={fullStoryRef}
                       required
                       rows={14}
                       value={form.fullStory}
@@ -391,7 +398,9 @@ function SubmitPageInner() {
                 {mode === "story" && (
                   <>
                     <div>
+                      <RichTextareaToolbar textareaRef={contentRef} value={form.content} onChange={(v) => update("content", v)} />
                       <textarea
+                        ref={contentRef}
                         rows={3}
                         value={form.content}
                         onChange={(e) => update("content", e.target.value)}
@@ -401,7 +410,9 @@ function SubmitPageInner() {
                       <p className="text-[#64748B] text-[10px] mt-1">This appears as the card preview on the feed</p>
                     </div>
                     <div>
+                      <RichTextareaToolbar textareaRef={fullStoryRef} value={form.fullStory} onChange={(v) => update("fullStory", v)} />
                       <textarea
+                        ref={fullStoryRef}
                         required
                         rows={12}
                         value={form.fullStory}

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Post } from "@/types";
 import { getComments, updatePost, markPostDeleted } from "@/lib/storage";
+import { storyUrl } from "@/lib/utils";
 
 const FLAIR_COLORS: Record<string, string> = {
   "Red Flag Guide": "#EF4444",
@@ -76,7 +77,7 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
 
   const handleShare = (e: React.MouseEvent) => {
     e.preventDefault();
-    navigator.clipboard?.writeText(window.location.origin + `/story/${post.id}`);
+    navigator.clipboard?.writeText(window.location.origin + storyUrl(post.id, post.title));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -118,7 +119,7 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
         </div>
 
         {/* Title */}
-        <Link href={`/story/${post.id}`}>
+        <Link href={storyUrl(post.id, post.title)}>
           <h2 className="text-slate-800 dark:text-[#E2E8F0] font-bold text-[17px] leading-snug mb-2.5 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
             {post.title}
           </h2>
@@ -169,7 +170,7 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
 
             {/* Comments */}
             <Link
-              href={`/story/${post.id}#comments`}
+              href={storyUrl(post.id, post.title) + "#comments"}
               onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-[#111520] border border-slate-200 dark:border-[#1E2336] rounded-lg text-slate-500 dark:text-[#475569] hover:text-slate-700 dark:hover:text-[#94A3B8] hover:bg-slate-100 dark:hover:bg-[#1A1A28] text-xs font-semibold transition-colors"
             >
@@ -209,8 +210,8 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
             </div>
           )}
 
-          <Link href={`/story/${post.id}`} className="flex items-center gap-1 text-sm font-bold text-[#E11D48] hover:text-rose-700 dark:hover:text-rose-400 transition-colors">
-            {post.type === "post" ? "View Post" : "Read Story"}
+          <Link href={storyUrl(post.id, post.title)} className="flex items-center gap-1 text-sm font-bold text-[#E11D48] hover:text-rose-700 dark:hover:text-rose-400 transition-colors">
+            {post.type === "post" ? "View Post" : "Read"}
             <ArrowRight size={15} />
           </Link>
         </div>

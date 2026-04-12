@@ -6,9 +6,9 @@ import { useState, useEffect, Suspense } from "react";
 import {
   Home, ShieldCheck, ChevronDown, ChevronUp, PlusCircle,
   BarChart2, Users, LayoutGrid, FileText, MessageSquare,
-  Flag, Tag, Megaphone, Settings, ShieldAlert, User, LogOut,
+  Flag, Tag, Megaphone, Settings, ShieldAlert,
 } from "lucide-react";
-import { getSession, logout, getSessionSync } from "@/lib/auth";
+import { getSession, getSessionSync } from "@/lib/auth";
 import { getUserCommunities } from "@/lib/storage";
 import type { AuthUser } from "@/lib/auth";
 import type { Community } from "@/types";
@@ -37,11 +37,6 @@ function SidebarInner({ open, onClose }: SidebarProps) {
   const [mounted, setMounted] = useState(() => typeof window !== "undefined");
   const [userCommunities, setUserCommunities] = useState<Community[]>([]);
   const [adminExpanded, setAdminExpanded] = useState(false);
-
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
 
   useEffect(() => {
     // Confirm session in background (updates if cache stale)
@@ -175,21 +170,6 @@ function SidebarInner({ open, onClose }: SidebarProps) {
         )}
 
         <div className="my-3 border-t border-slate-100 dark:border-[#1C2035]" />
-        {mounted && user && (
-          <>
-            <Link href="/profile" onClick={onClose} className={navLinkClass(isActive("/profile"))}>
-              <User size={16} className={iconClass(isActive("/profile"))} />
-              {user.username}
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-slate-600 dark:text-[#64748B] hover:text-rose-600 dark:hover:text-[#F87171] hover:bg-rose-50 dark:hover:bg-[#161B2A]"
-            >
-              <LogOut size={16} className="text-slate-400 dark:text-[#475569] shrink-0" />
-              Log Out
-            </button>
-          </>
-        )}
 
       </div>
 

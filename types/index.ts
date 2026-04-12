@@ -10,6 +10,8 @@ export interface Post {
   type?: "post" | "story" | "blog";
   imageUrl?: string;
   coverImage?: string;
+  metaDescription?: string;
+  tags?: string;
 }
 
 export interface Community {

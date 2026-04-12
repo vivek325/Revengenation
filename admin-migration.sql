@@ -14,6 +14,8 @@ alter table public.posts add column if not exists is_hidden boolean not null def
 alter table public.posts add column if not exists is_pinned boolean not null default false;
 alter table public.posts add column if not exists is_locked boolean not null default false;
 alter table public.posts add column if not exists is_nsfw boolean not null default false;
+alter table public.posts add column if not exists meta_description text;
+alter table public.posts add column if not exists tags text;
 
 alter table public.comments add column if not exists is_hidden boolean not null default false;
 
