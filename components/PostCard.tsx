@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useEffect } from "react";
+import { memo, useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowUpCircle, ArrowDownCircle, MessageCircle, Share2,
@@ -10,6 +10,26 @@ import {
 import type { Post } from "@/types";
 import { getComments, updatePost, markPostDeleted } from "@/lib/storage";
 import { storyUrl } from "@/lib/utils";
+
+function renderInlineLinks(text: string): ReactNode {
+  const regex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  const parts: ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(
+      <a key={m.index} href={m[2]} target="_blank" rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-[#E11D48] underline underline-offset-2 hover:text-rose-400 transition-colors">
+        {m[1]}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length > 1 ? <>{parts}</> : text;
+}
 
 const FLAIR_COLORS: Record<string, string> = {
   "Red Flag Guide": "#EF4444",
@@ -125,7 +145,7 @@ export default memo(function PostCard({ post, voteState, onVote, commentCount: c
           </h2>
         </Link>
 
-        <p className="text-slate-500 dark:text-[#475569] text-sm leading-relaxed line-clamp-2 mb-4">{post.content}</p>
+        <p className="text-slate-500 dark:text-[#475569] text-sm leading-relaxed line-clamp-2 mb-4">{renderInlineLinks(post.content)}</p>
 
         {post.type === "blog" && post.coverImage && (
           // eslint-disable-next-line @next/next/no-img-element
