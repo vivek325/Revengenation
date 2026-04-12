@@ -45,7 +45,7 @@ async function fetchFeedFromSupabase(): Promise<FeedData> {
     await Promise.all([
       supabase
         .from("posts")
-        .select("id, title, content, full_story, author, category, type, votes, image_url, created_at")
+        .select("id, title, content, full_story, author, category, type, votes, image_url, created_at, meta_description, tags")
         .order("created_at", { ascending: false })
         .limit(100),
       supabase.from("vote_adjustments").select("post_id, adjustment").limit(500),
