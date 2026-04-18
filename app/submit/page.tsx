@@ -52,6 +52,8 @@ function SubmitPageInner() {
     fullStory: "",
     author: "",
   });
+  const [metaDescription, setMetaDescription] = useState("");
+  const [tags, setTags] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -143,6 +145,8 @@ function SubmitPageInner() {
       type: mode,
       imageUrl: mode === "post" && imagePreview ? imagePreview : undefined,
       coverImage: mode === "blog" && coverImage ? coverImage : undefined,
+      metaDescription: mode === "blog" && metaDescription.trim() ? metaDescription.trim() : undefined,
+      tags: mode === "blog" && tags.trim() ? tags.trim() : undefined,
     };
     injectPostIntoFeedCache(newPost);
     bustFeedCache(); // force home feed to re-fetch so new post appears instantly
@@ -166,6 +170,8 @@ function SubmitPageInner() {
                 onClick={() => {
                   setSubmitted(false);
                   setForm({ title: "", content: "", fullStory: "", author: "" });
+                  setMetaDescription("");
+                  setTags("");
                   setPostAnon(false);
                 }}
                 className="px-5 py-2 border border-slate-200 dark:border-[#1E1E2E] text-[#94A3B8] hover:bg-slate-100 dark:bg-[#1A1A28] rounded-lg text-sm font-bold transition-colors"
@@ -381,16 +387,72 @@ function SubmitPageInner() {
                         <input type="file" accept="image/*" className="hidden" onChange={handleCoverImage} />
                       </label>
                     )}
-                    <RichTextareaToolbar textareaRef={fullStoryRef} value={form.fullStory} onChange={(v) => update("fullStory", v)} />
-                    <textarea
-                      ref={fullStoryRef}
-                      required
-                      rows={14}
-                      value={form.fullStory}
-                      onChange={(e) => update("fullStory", e.target.value)}
-                      placeholder="Write the full blog article here. Use double line breaks for new paragraphs…"
-                      className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 dark:border-[#2A2A3E] focus:border-[#10B981] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none leading-relaxed"
-                    />
+                    {/* Meta Description */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Meta Description</label>
+                      <p className="text-[#64748B] text-[10px] mb-1.5">Shown in Google search results — under 155 characters</p>
+                      <textarea
+                        rows={2}
+                        value={metaDescription}
+                        onChange={(e) => setMetaDescription(e.target.value)}
+                        placeholder="Compelling reason to click — include main keywords…"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 focus:border-[#10B981] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
+                      />
+                      <p className={`text-[10px] mt-1 ${metaDescription.length > 155 ? "text-red-500" : metaDescription.length > 130 ? "text-yellow-500" : "text-[#64748B]"}`}>
+                        {metaDescription.length}/155 chars
+                      </p>
+                    </div>
+                    {/* Excerpt / Hook */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Excerpt / Hook</label>
+                      <p className="text-[#64748B] text-[10px] mb-1.5">Shown on feed card (2–3 sentences, under 200 chars)</p>
+                      <RichTextareaToolbar textareaRef={contentRef} value={form.content} onChange={(v) => update("content", v)} />
+                      <textarea
+                        ref={contentRef}
+                        rows={3}
+                        value={form.content}
+                        onChange={(e) => update("content", e.target.value)}
+                        placeholder="Short hook shown on the feed card…"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 focus:border-[#10B981] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none"
+                      />
+                      <p className={`text-[10px] mt-1 ${form.content.length > 200 ? "text-yellow-500" : "text-[#64748B]"}`}>{form.content.length}/200 chars</p>
+                    </div>
+                    {/* Full Story */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Full Story / Article Body</label>
+                      <p className="text-[#64748B] text-[10px] mb-1.5">Use blank lines between paragraphs. Supports [link text](url) markdown.</p>
+                      <RichTextareaToolbar textareaRef={fullStoryRef} value={form.fullStory} onChange={(v) => update("fullStory", v)} />
+                      <textarea
+                        ref={fullStoryRef}
+                        required
+                        rows={14}
+                        value={form.fullStory}
+                        onChange={(e) => update("fullStory", e.target.value)}
+                        placeholder="Write the full blog article here. Use double line breaks for new paragraphs…"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 focus:border-[#10B981] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors resize-none leading-relaxed"
+                      />
+                      <p className="text-[#64748B] text-[10px] mt-1.5">
+                        {form.fullStory.length.toLocaleString()} chars · ~{Math.ceil(form.fullStory.split(/\s+/).filter(Boolean).length / 200)} min read
+                      </p>
+                    </div>
+                    {/* Tags */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Tags</label>
+                      <p className="text-[#64748B] text-[10px] mb-1.5">3–5 tags, comma separated (e.g. cheating-signs, red-flags)</p>
+                      <input
+                        value={tags}
+                        onChange={(e) => setTags(e.target.value)}
+                        placeholder="phone-red-flags, cheating-signs, marriage-red-flags"
+                        className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] hover:border-slate-300 focus:border-[#10B981] rounded-lg px-3 py-2 text-slate-800 dark:text-[#E2E8F0] placeholder-[#64748B] text-sm outline-none transition-colors"
+                      />
+                      {tags && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => (
+                            <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#1A1A28] text-[#64748B] border border-slate-200 dark:border-[#1E1E2E]">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

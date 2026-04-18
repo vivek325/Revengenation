@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import {
   Home, ShieldCheck, ChevronDown, ChevronUp, PlusCircle,
   BarChart2, Users, LayoutGrid, FileText, MessageSquare,
-  Flag, Tag, Megaphone, Settings, ShieldAlert,
+  Flag, Tag, Megaphone, Settings, ShieldAlert, Globe,
 } from "lucide-react";
 import { getSession, getSessionSync } from "@/lib/auth";
 import { getUserCommunities } from "@/lib/storage";
@@ -17,6 +17,26 @@ interface SidebarProps {
   open: boolean;
   onClose: () => void;
 }
+
+const LANGUAGES = [
+  { code: "en",    label: "English",    native: "English",    flag: "🇺🇸" },
+  { code: "hi",    label: "Hindi",      native: "हिन्दी",     flag: "🇮🇳" },
+  { code: "bn",    label: "Bengali",    native: "বাংলা",      flag: "🇮🇳" },
+  { code: "ta",    label: "Tamil",      native: "தமிழ்",      flag: "🇮🇳" },
+  { code: "te",    label: "Telugu",     native: "తెలుగు",     flag: "🇮🇳" },
+  { code: "mr",    label: "Marathi",    native: "मराठी",      flag: "🇮🇳" },
+  { code: "gu",    label: "Gujarati",   native: "ગુજરાતી",    flag: "🇮🇳" },
+  { code: "pa",    label: "Punjabi",    native: "ਪੰਜਾਬੀ",    flag: "🇮🇳" },
+  { code: "es",    label: "Spanish",    native: "Español",    flag: "🇪🇸" },
+  { code: "fr",    label: "French",     native: "Français",   flag: "🇫🇷" },
+  { code: "de",    label: "German",     native: "Deutsch",    flag: "🇩🇪" },
+  { code: "ar",    label: "Arabic",     native: "العربية",    flag: "🇸🇦" },
+  { code: "pt",    label: "Portuguese", native: "Português",  flag: "🇧🇷" },
+  { code: "ru",    label: "Russian",    native: "Русский",    flag: "🇷🇺" },
+  { code: "zh-CN", label: "Chinese",    native: "中文",       flag: "🇨🇳" },
+  { code: "ja",    label: "Japanese",   native: "日本語",     flag: "🇯🇵" },
+  { code: "ko",    label: "Korean",     native: "한국어",     flag: "🇰🇷" },
+];
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
@@ -37,6 +57,88 @@ function SidebarInner({ open, onClose }: SidebarProps) {
   const [mounted, setMounted] = useState(() => typeof window !== "undefined");
   const [userCommunities, setUserCommunities] = useState<Community[]>([]);
   const [adminExpanded, setAdminExpanded] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const [activeLang, setActiveLang] = useState("en");
+  const langRef = useRef<HTMLDivElement>(null);
+
+  // Read active lang from localStorage on mount and re-apply if non-English
+  useEffect(() => {
+    const saved = localStorage.getItem("rn-lang") ?? "en";
+    setActiveLang(saved);
+
+    if (saved === "en") {
+      // Clear any leftover googtrans cookie so page stays English
+      const exp = new Date(0).toUTCString();
+      document.cookie = `googtrans=; expires=${exp}; path=/`;
+      document.cookie = `googtrans=; expires=${exp}; path=/; domain=.${location.hostname}`;
+      return;
+    }
+
+    // Re-apply saved language once Google Translate widget is ready
+    let attempts = 0;
+    const applyOnLoad = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const doGT = (window as any).doGTranslate;
+      if (typeof doGT === "function") { doGT(`en|${saved}`); return; }
+      const sel = document.querySelector("select.goog-te-combo") as HTMLSelectElement | null;
+      if (sel) { sel.value = saved; sel.dispatchEvent(new Event("change", { bubbles: true })); return; }
+      if (++attempts < 20) setTimeout(applyOnLoad, 500);
+    };
+    applyOnLoad();
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (langRef.current && !langRef.current.contains(e.target as Node)) {
+        setLangOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const changeLang = (code: string) => {
+    setLangOpen(false);
+    setActiveLang(code);
+    localStorage.setItem("rn-lang", code);
+
+    let attempts = 0;
+    const tryApply = () => {
+      // Option 1: Google's own exposed function (most reliable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const doGT = (window as any).doGTranslate;
+      if (typeof doGT === "function") {
+        doGT(code === "en" ? "en|en" : `en|${code}`);
+        return;
+      }
+      // Option 2: manipulate the hidden select Google Translate creates
+      const select = document.querySelector("select.goog-te-combo") as HTMLSelectElement | null;
+      if (select) {
+        select.value = code === "en" ? "" : code;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+      // Retry up to 20 times (10 seconds) while widget loads
+      attempts++;
+      if (attempts < 20) {
+        setTimeout(tryApply, 500);
+        return;
+      }
+      // Hard fallback: cookie + page reload
+      const host = location.hostname;
+      const isLocal = host === "localhost" || host === "127.0.0.1";
+      const exp = new Date(0).toUTCString();
+      document.cookie = `googtrans=; expires=${exp}; path=/`;
+      if (!isLocal) document.cookie = `googtrans=; expires=${exp}; path=/; domain=.${host}`;
+      if (code !== "en") {
+        document.cookie = `googtrans=/en/${code}; path=/`;
+        if (!isLocal) document.cookie = `googtrans=/en/${code}; path=/; domain=.${host}`;
+      }
+      location.reload();
+    };
+    tryApply();
+  };
 
   useEffect(() => {
     // Confirm session in background (updates if cache stale)
@@ -95,6 +197,46 @@ function SidebarInner({ open, onClose }: SidebarProps) {
           <Home size={16} className={iconClass(isActive("/"))} />
           Home
         </Link>
+
+        {/* Language Selector */}
+        <div ref={langRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setLangOpen((v) => !v)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors text-slate-600 dark:text-[#64748B] hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#161B2A]"
+          >
+            <Globe size={16} className="shrink-0 text-slate-400 dark:text-[#475569]" />
+            <span className="flex-1 text-left">
+              {LANGUAGES.find((l) => l.code === activeLang)?.flag}{" "}
+              {LANGUAGES.find((l) => l.code === activeLang)?.native ?? "English"}
+            </span>
+            {langOpen ? <ChevronUp size={14} className="shrink-0 text-slate-400" /> : <ChevronDown size={14} className="shrink-0 text-slate-400" />}
+          </button>
+
+          {langOpen && (
+            <div className="absolute left-0 right-0 mt-1 z-50 bg-white dark:bg-[#0D1117] border border-slate-200 dark:border-[#1C2035] rounded-xl shadow-xl overflow-hidden">
+              <div className="max-h-64 overflow-y-auto py-1">
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    onClick={() => changeLang(lang.code)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                      activeLang === lang.code
+                        ? "bg-rose-50 dark:bg-[#E11D48]/10 text-[#E11D48] font-semibold"
+                        : "text-slate-600 dark:text-[#94A3B8] hover:bg-slate-50 dark:hover:bg-[#161B2A] hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <span className="text-base w-5 text-center">{lang.flag}</span>
+                    <span className="flex-1 text-left">{lang.native}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-[#475569]">{lang.label}</span>
+                    {activeLang === lang.code && <span className="text-[#E11D48] text-xs">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Admin Panel */}
         {mounted && user?.isAdmin && (

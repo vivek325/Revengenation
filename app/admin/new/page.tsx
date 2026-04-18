@@ -62,7 +62,7 @@ export default function NewPostPage() {
   const [category, setCategory] = useState("Red Flag Guide");
   const [customCategory, setCustomCategory] = useState("");
   const [author, setAuthor] = useState("RevengeNation");
-  const [content, setContent] = useState("");        // Excerpt
+  const [content, setContent] = useState("");        // Excerpt / Hook
   const [fullStory, setFullStory] = useState("");    // Full article
   const [tags, setTags] = useState("");
   const [status, setStatus] = useState<"published" | "draft">("published");
@@ -171,7 +171,6 @@ export default function NewPostPage() {
 
           {/* Left — main content */}
           <div className="lg:col-span-2 space-y-4">
-
             {/* Post Title */}
             <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-4">
               <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Post Title (H1)</label>
@@ -202,17 +201,17 @@ export default function NewPostPage() {
               </p>
             </div>
 
-            {/* Excerpt */}
+            {/* Excerpt / Hook */}
             <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-4">
               <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Excerpt / Hook</label>
-              <p className="text-[#64748B] text-[10px] mb-2">Shown on feed card — 2–3 punchy sentences, under 200 chars</p>
+              <p className="text-[#64748B] text-[10px] mb-2">Shown on feed card (2–3 sentences, under 200 chars)</p>
               <RichTextareaToolbar textareaRef={contentRef} value={content} onChange={setContent} />
               <textarea
                 ref={contentRef}
                 rows={3}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="You used to know her phone password. Now her phone is glued to her like a second organ."
+                placeholder="Short hook shown on the feed card…"
                 className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] text-sm outline-none transition-colors resize-none"
               />
               <p className={`text-[10px] mt-1 ${content.length > 200 ? "text-yellow-500" : "text-[#64748B]"}`}>{content.length}/200 chars</p>
@@ -221,20 +220,21 @@ export default function NewPostPage() {
             {/* Full Story */}
             <div className="bg-white dark:bg-[#0F0F18] border border-slate-200 dark:border-[#1E1E2E] rounded-xl p-4">
               <label className="block text-xs font-semibold text-[#64748B] uppercase tracking-widest mb-1">Full Story / Article Body</label>
-              <p className="text-[#64748B] text-[10px] mb-2">Paste full content here. Use blank lines between paragraphs. Supports [link text](url) markdown.</p>
+              <p className="text-[#64748B] text-[10px] mb-2">Use blank lines between paragraphs. Supports [link text](url) markdown.</p>
               <RichTextareaToolbar textareaRef={fullStoryRef} value={fullStory} onChange={setFullStory} />
               <textarea
                 ref={fullStoryRef}
                 rows={22}
                 value={fullStory}
                 onChange={(e) => setFullStory(e.target.value)}
-                placeholder="Paste full blog content here with headings, paragraphs, etc.&#10;&#10;Use double line breaks for new paragraphs."
+                placeholder="Paste full blog content here with headings, paragraphs, etc.\n\nUse double line breaks for new paragraphs."
                 className="w-full bg-slate-50 dark:bg-[#08080E] border border-slate-200 dark:border-[#1E1E2E] focus:border-[#E11D48] rounded-lg px-3 py-2.5 text-slate-800 dark:text-[#E2E8F0] text-sm outline-none transition-colors resize-none leading-relaxed font-mono"
               />
               <p className="text-[#64748B] text-[10px] mt-1.5">
                 {fullStory.length.toLocaleString()} chars · ~{Math.ceil(fullStory.split(/\s+/).filter(Boolean).length / 200)} min read
               </p>
             </div>
+
           </div>
 
           {/* Right sidebar */}

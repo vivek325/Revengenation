@@ -23,3 +23,11 @@ html { scrollbar-gutter: stable; }
 
 /* Smoother button/link interactions */
 a, button { -webkit-tap-highlight-color: transparent; }
+
+/* Hide Google Translate injected toolbar — keep element in DOM so widget initializes */
+.goog-te-banner-frame { display: none !important; }
+body { top: 0 !important; }
+/* Keep translate element accessible but invisible */
+#google_translate_element { position: absolute !important; left: -9999px !important; top: -9999px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
+.goog-tooltip, .goog-tooltip:hover { display: none !important; }
+.goog-text-highlight { background-color: transparent !important; box-shadow: none !important; }

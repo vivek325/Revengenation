@@ -68,7 +68,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic story pages — visible (not hidden, not NSFW)
   const { data: posts } = await supabase
     .from("posts")
-    .select("id, title, created_at")
+    .select("id, title, created_at, type")
     .eq("is_hidden", false)
     .eq("is_nsfw", false)
     .order("created_at", { ascending: false })
@@ -77,8 +77,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const storyRoutes: MetadataRoute.Sitemap = (posts ?? []).map((post) => ({
     url: BASE_URL + storyUrl(post.id, post.title),
     lastModified: new Date(post.created_at),
-    changeFrequency: "weekly",
-    priority: 0.8,
+    changeFrequency: post.type === "blog" ? "monthly" : "weekly",
+    priority: post.type === "blog" ? 0.9 : 0.8,
   }));
 
   // Dynamic community pages — not locked, not NSFW
