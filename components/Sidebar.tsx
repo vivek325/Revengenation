@@ -61,30 +61,11 @@ function SidebarInner({ open, onClose }: SidebarProps) {
   const [activeLang, setActiveLang] = useState("en");
   const langRef = useRef<HTMLDivElement>(null);
 
-  // Read active lang from localStorage on mount and re-apply if non-English
+  // Read active lang from localStorage on mount to show correct label in UI
   useEffect(() => {
     const saved = localStorage.getItem("rn-lang") ?? "en";
     setActiveLang(saved);
-
-    if (saved === "en") {
-      // Clear any leftover googtrans cookie so page stays English
-      const exp = new Date(0).toUTCString();
-      document.cookie = `googtrans=; expires=${exp}; path=/`;
-      document.cookie = `googtrans=; expires=${exp}; path=/; domain=.${location.hostname}`;
-      return;
-    }
-
-    // Re-apply saved language once Google Translate widget is ready
-    let attempts = 0;
-    const applyOnLoad = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doGT = (window as any).doGTranslate;
-      if (typeof doGT === "function") { doGT(`en|${saved}`); return; }
-      const sel = document.querySelector("select.goog-te-combo") as HTMLSelectElement | null;
-      if (sel) { sel.value = saved; sel.dispatchEvent(new Event("change", { bubbles: true })); return; }
-      if (++attempts < 20) setTimeout(applyOnLoad, 500);
-    };
-    applyOnLoad();
+    // Translation itself is handled by the googtrans cookie on page load (set by changeLang)
   }, []);
 
   // Close dropdown on outside click
@@ -103,41 +84,21 @@ function SidebarInner({ open, onClose }: SidebarProps) {
     setActiveLang(code);
     localStorage.setItem("rn-lang", code);
 
-    let attempts = 0;
-    const tryApply = () => {
-      // Option 1: Google's own exposed function (most reliable)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doGT = (window as any).doGTranslate;
-      if (typeof doGT === "function") {
-        doGT(code === "en" ? "en|en" : `en|${code}`);
-        return;
-      }
-      // Option 2: manipulate the hidden select Google Translate creates
-      const select = document.querySelector("select.goog-te-combo") as HTMLSelectElement | null;
-      if (select) {
-        select.value = code === "en" ? "" : code;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        return;
-      }
-      // Retry up to 20 times (10 seconds) while widget loads
-      attempts++;
-      if (attempts < 20) {
-        setTimeout(tryApply, 500);
-        return;
-      }
-      // Hard fallback: cookie + page reload
-      const host = location.hostname;
-      const isLocal = host === "localhost" || host === "127.0.0.1";
-      const exp = new Date(0).toUTCString();
-      document.cookie = `googtrans=; expires=${exp}; path=/`;
-      if (!isLocal) document.cookie = `googtrans=; expires=${exp}; path=/; domain=.${host}`;
-      if (code !== "en") {
-        document.cookie = `googtrans=/en/${code}; path=/`;
-        if (!isLocal) document.cookie = `googtrans=/en/${code}; path=/; domain=.${host}`;
-      }
-      location.reload();
-    };
-    tryApply();
+    const host = location.hostname;
+    const isLocal = host === "localhost" || host === "127.0.0.1";
+    const exp = new Date(0).toUTCString();
+
+    // Clear existing googtrans cookie
+    document.cookie = `googtrans=; expires=${exp}; path=/`;
+    if (!isLocal) document.cookie = `googtrans=; expires=${exp}; path=/; domain=.${host}`;
+
+    if (code !== "en") {
+      // Set new language — Google Translate reads this cookie on page load
+      document.cookie = `googtrans=/en/${code}; path=/`;
+      if (!isLocal) document.cookie = `googtrans=/en/${code}; path=/; domain=.${host}`;
+    }
+
+    location.reload();
   };
 
   useEffect(() => {
