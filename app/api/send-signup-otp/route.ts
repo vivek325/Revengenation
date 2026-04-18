@@ -38,8 +38,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Check if email is already registered (via auth.users using admin API)
+  // Filter out soft-deleted users (deleted_at is set when user is deleted via SQL)
   const listRes = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(cleanEmail)}&per_page=1`,
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(cleanEmail)}&per_page=10`,
     {
       headers: {
         apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -49,8 +50,12 @@ export async function POST(req: NextRequest) {
   );
   if (listRes.ok) {
     const listJson = await listRes.json();
-    const users: unknown[] = listJson?.users ?? [];
-    if (users.length > 0) {
+    const users: { email?: string; deleted_at?: string | null }[] = listJson?.users ?? [];
+    // Only block if there's an active (non-deleted) user with this exact email
+    const activeUser = users.find(
+      (u) => u.email?.toLowerCase() === cleanEmail && !u.deleted_at
+    );
+    if (activeUser) {
       return NextResponse.json({ error: "This email is already registered. Please log in instead." }, { status: 400 });
     }
   }
